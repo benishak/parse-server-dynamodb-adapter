@@ -57,7 +57,6 @@ export class FilterExpression {
     constructor() {}
 
     createExp(key, value, op, not = false) {
-        
         if (!op) {
             throw "Operator not supported";
         }
@@ -178,7 +177,7 @@ export class Partition {
     className : string;
     dynamo : DynamoDB.DocumentClient;
 
-    constructor(database : string, className : string) {
+    constructor(database : string, className : string, settings : DynamoDB.DocumentClient.DocumentClientOptions) {
         this.dynamo = new DynamoDB.DocumentClient();
         this.database = database;
         this.className = className;
@@ -201,7 +200,6 @@ export class Partition {
     }
 
     getDynamoQueryFilter(query : Object = {}) : DynamoDB.DocumentClient.FilterConditionMap {
-
         let QueryFilter : DynamoDB.DocumentClient.FilterConditionMap = {};
 
         for (let key in query) {
@@ -225,11 +223,20 @@ export class Partition {
             AttributesToGet : keys
         }
 
-        return this.dynamo.get(params).promise();
+        return new Promise(
+            (resolve, reject) => {
+                this.dynamo.get(params, (err, data) {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(data.Item);
+                    }
+                })
+            }
+        );
     }
 
     _query(query: Object = {}, options : Options = {}, params : DynamoDB.DocumentClient.QueryInput = null, results = []) : Promise {
-
         if (!params) {
             let keys = Object(options.keys || {}).keys();
             let count = options.count ? true : false;
@@ -253,8 +260,7 @@ export class Partition {
             let _params : DynamoDB.DocumentClient.QueryInput = {
                 TableName : this.database,
                 KeyConditions: {
-                    className : this.createCondition('$eq', this.className),
-                    _id : this.createCondition('$eq', this.className)
+                    className : this.createCondition('$eq', this.className)
                 },
                 Limit : limit,
                 Select : select
@@ -280,60 +286,252 @@ export class Partition {
             params = _params;
         }
 
-        return this.dynamo.query(params).promise().then(
-            data => {
-                results = results.concat(data.Items || []);
-                if (data.LastEvaluatedKey && results.length < 100) {
-                    options.limit = 100 - results.length;
-                    params.ExclusiveStartKey = data.LastEvaluatedKey;
-                    return this._query(query, options, params, results);
-                }
+        return new Promise(
+            (resolve, reject) => {
+                this.dynamo.query(params, (err, data) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        results = results.concat(data.Items || []);
+                        if (data.LastEvaluatedKey && results.length < 100) {
+                            options.limit = 100 - results.length;
+                            params.ExclusiveStartKey = data.LastEvaluatedKey;
+                            return this._query(query, options, params, results);
+                        }
 
-                if (options.count) {
-                    return Promise.resolve(data.Count ? data.Count : 0);
-                }
+                        if (options.count) {
+                            resolve(data.Count ? data.Count : 0);
+                        }
 
-                return Promise.resolve(results);
+                        resolve(results);
+                    }
+                });
             }
-        );
+        )
     }
 
     find(query: Object = {}, options : Options = {}) : Promise {
-        return new Promise(
-            (resolve, reject) => {
-
-                let response : Promise;
-                
-                if (query.hasOwnProperty('_id')) {
-
-                    response = this._get(
-                        query['_id'],
-                        Object.keys(options.keys || {})
-                    );
-                    
-                } else {
-                    
-                    response = this._query(
-                        query,
-                        options
-                    );
-                }
-
-                response.then(
-                    data => {
-                        resolve(data.Item || data.Items);
-                    }
-                ).catch(
-                    error => {
-                        reject(error);
-                    }
-                )
-            }
-        )
+        if (query.hasOwnProperty('_id')) {
+            let id = query['_id'];
+            let keys = Object.keys(options.keys || {});
+            return this._get(id, keys);
+        } else {
+            return this._query(query, options);
+        }
     }
 
     count(query: Object = {}, options : Options = {}) : Promise {
         options.count = true;
         return this._query(query, options);
+    }
+
+    insertOne(object) : Promise {
+        let id = object['_id'];
+        delete object['_id'];
+        let params : DynamoDB.DocumentClient.PutItemInput = {
+            TableName : this.database,
+            Item: {
+                className : this.className,
+                _id : id,
+                ...object
+            }
+        }
+
+        return new Promise(
+            (resolve, reject) => {
+                this.dynamo.put(params, (err, data) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve({
+                            result : { ok : 1, n : 1 },
+                            ops : [ object ],
+                            insertedId : id
+                        });
+                    }
+                });
+            }
+        )
+    }
+
+    updateOne(query = {}, object : Object) : Promise {
+        let id = query['_id'] || object['_id'];
+        let params : DynamoDB.DocumentClient.UpdateItemInput = {
+            TableName : this.database,
+            Key: {
+                className : this.className
+            }
+        }
+
+        if (id) {
+            params.Key._id = id;
+        } else {
+            delete object['_id'];
+            for (let key in object) {
+                params.AttributeUpdates[key] = {
+                    Action : 'PUT',
+                    Value : object[key]
+                }
+            }
+
+            if (Object.keys(query).length > 0) {
+                let exp : FilterExpression = new FilterExpression();
+                exp = exp.build(query);
+                params.ConditionExpression = exp.FilterExpression;
+                params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+                params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+            }
+        }
+
+        return new Promise(
+            (resolve, reject) => {
+                this.dynamo.update(params, (err, data) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve({
+                            result : { ok : 1, n : 1, nModified : 1 }
+                        });
+                    }
+                });
+            }
+        )
+    }
+
+    upsertOne(query = {}, object : Object) : Promise {
+        return this.updateOne(query, object);
+    }
+
+    updateMany(query = {}, object) {
+        let id = query['_id'] || object['_id'];
+
+        if (id) {
+            return this.updateOne(query, object);
+        } else {let options = {
+                limit : 25,
+                keys : { _id : 1 }
+            }
+            return this.find(query, options).then(
+                (res) => {
+                    let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
+                        RequestItems : {}
+                    }
+
+                    params.RequestItems[this.database] = res.map(item => {
+                        return {
+                            PutRequest : {
+                                Item : {
+                                    _id : item._id,
+                                    ...object
+                                }
+                            }
+                        }
+                    });
+
+                    return new Promise(
+                        (resolve, reject) => {
+                            this.dynamo.batchWrite(params, (err, data) => {
+                                if (err) {
+                                    reject(err)
+                                } else {
+                                    resolve({
+                                        result : { ok : 1, n : (res || []).length }
+                                    });
+                                }
+                            });
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    deleteOne(query = {}) : Promise {
+        let id = query['_id'];
+        let params : DynamoDB.DocumentClient.DeleteItemInput = {
+            TableName : this.database,
+            Key: {
+                className : this.className
+            }
+        }
+
+        if (id) {
+            params.Key._id = id;
+        } else {
+            if (Object.keys(query).length > 0) { 
+                let exp = new FilterExpression();
+                exp = exp.build(query);
+                params.ConditionExpression = exp.FilterExpression;
+                params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+                params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+            }
+        }
+
+        return new Promise(
+            (resolve, reject) => {
+                this.dynamo.delete(params, (err, data) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve({
+                            result : { ok : 1 , n : 1 },
+                            deletedCount : 1
+                        })
+                    }
+                });
+            }
+        )
+    }
+
+    deleteMany(query = {}) : Promise {
+        let id = query['_id'];
+        if (id) {
+            return this.deleteOne(query);
+        } else {
+            let options = {
+                limit : 25,
+                keys : { _id : 1 }
+            }
+            return this.find(query, options).then(
+                (res) => {
+                    let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
+                        RequestItems : {}
+                    }
+
+                    params.RequestItems[this.database] = res.map(item => {
+                        return {
+                            DeleteRequest : {
+                                Key : {
+                                    _id : item._id
+                                }
+                            }
+                        }
+                    });
+
+                    return new Promise(
+                        (resolve, reject) => {
+                            this.dynamo.batchWrite(params, (err, data) => {
+                                if (err) {
+                                    reject(err)
+                                } else {
+                                    resolve({
+                                        result : { ok : 1 , n : (res || []).length },
+                                        deletedCount : (res || []).length
+                                    });
+                                }
+                            });
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    _ensureSparseUniqueIndexInBackground(indexRequest) {
+        return Promise.resolve();
+    }
+
+    drop () {
+        return Promise.reject();
     }
 }

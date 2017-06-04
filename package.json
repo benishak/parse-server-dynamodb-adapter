@@ -1,0 +1,28 @@
+{
+  "name": "parse-server-dynamodb-adapter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "test": "tsc && mocha build/spec"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/aws-sdk": "^2.7.0",
+    "@types/node": "^7.0.27",
+    "parse": "^1.9.2",
+    "parse-server": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/chai": "^3.5.2",
+    "@types/mocha": "^2.2.41",
+    "chai": "^3.5.0",
+    "mocha": "^3.3.0",
+    "mocha-typescript": "^1.1.2",
+    "source-map-support": "^0.4.15"
+  }
+}

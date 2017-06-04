@@ -5,7 +5,8 @@
         "noImplicitAny": false,
         "sourceMap": false,
         "outDir": "build",
-        "experimentalDecorators": true
+        "experimentalDecorators": true,
+   	"moduleResolution": "node"
     },
 
     "include": [

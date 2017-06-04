@@ -5,6 +5,9 @@
 import { DynamoDB } from 'aws-sdk';
 import * as Promise from 'bluebird';
 
+
+var u = require('util');
+
 type Options = {
     skip? : Object, // not supported
     limit? : number,
@@ -177,8 +180,8 @@ export class Partition {
     className : string;
     dynamo : DynamoDB.DocumentClient;
 
-    constructor(database : string, className : string, settings : DynamoDB.DocumentClient.DocumentClientOptions) {
-        this.dynamo = new DynamoDB.DocumentClient();
+    constructor(database : string, className : string, service : DynamoDB) {
+        this.dynamo = new DynamoDB.DocumentClient({ service : service });
         this.database = database;
         this.className = className;
     }
@@ -214,21 +217,32 @@ export class Partition {
     }
 
     _get(id : string, keys : string[] = []) : Promise {
+        keys = keys || [];
         let params : DynamoDB.DocumentClient.GetItemInput = {
             TableName : this.database,
             Key: {
-                className : this.className,
+                _pk_className : this.className,
                 _id : id
-            },
-            AttributesToGet : keys
+            }
         }
+
+        if (keys.length > 0) {
+            params.AttributesToGet = keys;
+        }
+
+        console.log('get', u.inspect(params, false, null));
 
         return new Promise(
             (resolve, reject) => {
-                this.dynamo.get(params, (err, data) {
+                this.dynamo.get(params, (err, data) => {
                     if (err) {
+                        console.log('err get', err);
                         reject(err);
                     } else {
+                        console.log('result get', data);
+                        if (data.Item) {
+                            delete data.Item._pk_className;
+                        }
                         resolve(data.Item);
                     }
                 })
@@ -238,7 +252,7 @@ export class Partition {
 
     _query(query: Object = {}, options : Options = {}, params : DynamoDB.DocumentClient.QueryInput = null, results = []) : Promise {
         if (!params) {
-            let keys = Object(options.keys || {}).keys();
+            let keys = Object.keys(options.keys || {});
             let count = options.count ? true : false;
 
             // maximum by DynamoDB is 100 or 1MB
@@ -260,7 +274,7 @@ export class Partition {
             let _params : DynamoDB.DocumentClient.QueryInput = {
                 TableName : this.database,
                 KeyConditions: {
-                    className : this.createCondition('$eq', this.className)
+                    _pk_className : this.createCondition('$eq', this.className)
                 },
                 Limit : limit,
                 Select : select
@@ -286,10 +300,13 @@ export class Partition {
             params = _params;
         }
 
+        console.log('query',u.inspect(params, false, null));
+
         return new Promise(
             (resolve, reject) => {
                 this.dynamo.query(params, (err, data) => {
                     if (err) {
+                        console.log('err', err);
                         reject(err);
                     } else {
                         results = results.concat(data.Items || []);
@@ -302,7 +319,10 @@ export class Partition {
                         if (options.count) {
                             resolve(data.Count ? data.Count : 0);
                         }
-
+                        console.log('results', results);
+                        results.forEach((item) => {
+                            delete item._pk_className;
+                        });
                         resolve(results);
                     }
                 });
@@ -331,11 +351,13 @@ export class Partition {
         let params : DynamoDB.DocumentClient.PutItemInput = {
             TableName : this.database,
             Item: {
-                className : this.className,
+                _pk_className : this.className,
                 _id : id,
                 ...object
             }
         }
+
+        console.log('insert', u.inspect(params, false, null));
 
         return new Promise(
             (resolve, reject) => {
@@ -344,7 +366,8 @@ export class Partition {
                         reject(err);
                     } else {
                         resolve({
-                            result : { ok : 1, n : 1 },
+                            ok : 1,
+                            n : 1,
                             ops : [ object ],
                             insertedId : id
                         });
@@ -359,21 +382,13 @@ export class Partition {
         let params : DynamoDB.DocumentClient.UpdateItemInput = {
             TableName : this.database,
             Key: {
-                className : this.className
+                _pk_className : this.className
             }
         }
 
         if (id) {
             params.Key._id = id;
         } else {
-            delete object['_id'];
-            for (let key in object) {
-                params.AttributeUpdates[key] = {
-                    Action : 'PUT',
-                    Value : object[key]
-                }
-            }
-
             if (Object.keys(query).length > 0) {
                 let exp : FilterExpression = new FilterExpression();
                 exp = exp.build(query);
@@ -383,6 +398,20 @@ export class Partition {
             }
         }
 
+        delete object['_id'];
+        if (Object.keys(object).length > 0) {
+            params.AttributeUpdates = {};
+            for (let key in object) {
+                let action = object[key] === undefined ? 'DELETE' : 'PUT';
+                params.AttributeUpdates[key] = {
+                    Action : action,
+                    Value : object[key]
+                }
+            }
+        }
+
+        console.log('update', u.inspect(params, false, null));
+
         return new Promise(
             (resolve, reject) => {
                 this.dynamo.update(params, (err, data) => {
@@ -390,7 +419,10 @@ export class Partition {
                         reject(err);
                     } else {
                         resolve({
-                            result : { ok : 1, n : 1, nModified : 1 }
+                            ok : 1,
+                            n : 1,
+                            nModified : 1,
+                            value : data.Attributes
                         });
                     }
                 });
@@ -435,7 +467,8 @@ export class Partition {
                                     reject(err)
                                 } else {
                                     resolve({
-                                        result : { ok : 1, n : (res || []).length }
+                                        ok : 1,
+                                        n : (res || []).length
                                     });
                                 }
                             });
@@ -451,7 +484,7 @@ export class Partition {
         let params : DynamoDB.DocumentClient.DeleteItemInput = {
             TableName : this.database,
             Key: {
-                className : this.className
+                _pk_className : this.className
             }
         }
 
@@ -474,7 +507,8 @@ export class Partition {
                         reject(err);
                     } else {
                         resolve({
-                            result : { ok : 1 , n : 1 },
+                            ok : 1 ,
+                            n : 1,
                             deletedCount : 1
                         })
                     }
@@ -515,7 +549,8 @@ export class Partition {
                                     reject(err)
                                 } else {
                                     resolve({
-                                        result : { ok : 1 , n : (res || []).length },
+                                        ok : 1,
+                                        n : (res || []).length,
                                         deletedCount : (res || []).length
                                     });
                                 }

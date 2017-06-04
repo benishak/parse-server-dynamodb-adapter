@@ -24,6 +24,8 @@ const defaultCLPS = Object.freeze({
     addField: {'*': true},
 });
 
+type sType = { type, targetClass? }
+
 export function mongoFieldToParseSchemaField(type) {
     if (type[0] === '*') {
         return {
@@ -86,7 +88,7 @@ export function _mongoSchemaQueryFromNameQuery(name : string, query = {}) : Obje
     return object;
 }
 
-export function parseFieldTypeToMongoFieldType({ type, targetClass }) {
+export function parseFieldTypeToMongoFieldType({ type, targetClass = null }) {
     switch (type) {
         case 'Pointer':  return `*${targetClass}`;
         case 'Relation': return `relation<${targetClass}>`;
@@ -107,7 +109,7 @@ export class SchemaPartition extends Partition {
     _fetchAllSchemasFrom_SCHEMA() {
         return this.find().then(
             schemas => schemas.map(mongoSchemaToParseSchema)
-        )
+        ).catch(console.log);
     }
 
     _fechOneSchemaFrom_SCHEMA(name: string) {
@@ -127,18 +129,21 @@ export class SchemaPartition extends Partition {
         return this.deleteOne({ _id : name });
     }
 
-    upsertSchema(name: string, query: string, update) {
+    updateSchema(name: string, query: Object, update: Object) {
         let _query = _mongoSchemaQueryFromNameQuery(name, query);
-        this.upsertOne(_query, update);
+        this.updateOne(_query, update);
     }
 
-    addFieldIfNotExists(className: string, fieldName: string, type: string) {
+    upsertSchema(name: string, query: Object, update: Object) {
+        return this.updateSchema(name, query, update);
+    }
+
+    addFieldIfNotExists(className: string, fieldName: string, type: sType) {
         let query = _mongoSchemaQueryFromNameQuery(className);
+        console.log('addField', query);
+        console.log('ttt', type);
         return this.upsertOne(query, {
-            fieldName : parseFieldTypeToMongoFieldType({
-                type : type,
-                targetClass : null
-            })
-        });
+            [fieldName] : parseFieldTypeToMongoFieldType(type)
+        }).then(x => console.log('XXX', x)).catch(ee => console.log('EEE', ee));
     }
 }

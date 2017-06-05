@@ -163,11 +163,45 @@ export class Adapter {
         return this._schemaCollection()._fechOneSchemaFrom_SCHEMA(className);
     }
 
+    transformDateObject(object = {}) : Object {
+        Object.keys(object).forEach(
+            key => {
+                if (object[key] instanceof Date) {
+                    object[key] = object[key].toISOString();
+                }
+
+                if (object[key] instanceof Object) {
+                    if (object[key].hasOwnProperty('__type')) {
+                        if ((object[key].__type || "").toLowerCase() == 'date') {
+                            console.log('date iso',object[key], object[key].iso);
+                            object[key] = new Date(object[key].iso || new Date());
+                            try {
+                                object[key] = object[key].toISOString();
+                            } catch(err) {
+                                throw err;
+                            }
+                        }
+                    } else {
+                        object[key] = this.transformDateObject(object[key]);
+                    }
+                }
+            }
+        )
+
+        return object;
+    }
+
     createObject(className, schema, object) {
+        object = this.transformDateObject(object);
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         object = Transform.parseObjectToMongoObjectForCreate(className, object, schema);
-        
-        console.log('create',object);
+        Object.keys(object).forEach(
+            key => {
+                if (object[key] instanceof Date) {
+                    object[key] = object[key].toISOString();
+                }
+            }
+        )
         return this._adaptiveCollection(className).insertOne(object)
             .catch(
                 (error) => {
@@ -199,7 +233,7 @@ export class Adapter {
     updateObjectsByQuery(className, schema, query, update) {
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         update = Transform.transformUpdate(className, update, schema);
-        query = Transform.transformWheree(className, query, schema);
+        query = Transform.transformWhere(className, query, schema);
 
         return this._adaptiveCollection(className).updateMany(query, update);
     }
@@ -207,7 +241,7 @@ export class Adapter {
     findOneAndUpdate(className, schema, query, update) {
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         update = Transform.transformUpdate(className, update, schema);
-        query = Transform.transformWheree(className, query, schema);
+        query = Transform.transformWhere(className, query, schema);
 
         return this._adaptiveCollection(className).updateOne(query, update)
             .then(result => Transform.mongoObjectToParseObject(className, result.value, schema));
@@ -225,6 +259,7 @@ export class Adapter {
             memo[Transform.transformKey(className, key, schema)] = 1;
             return memo;
         }, {});
+        console.log('options ->', { skip, limit, sort, keys});
         return this._adaptiveCollection(className).find(query, { skip, limit, sort, keys})
             .then(
                 objects => objects.map(object => Transform.mongoObjectToParseObject(className, object, schema))

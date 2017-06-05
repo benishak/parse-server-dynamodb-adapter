@@ -32,6 +32,7 @@ const DynamoComperator = {
 export class FilterExpression {
 
     FilterExpression : string = '[prev]';
+    KeyConditionExpression : string = '[prev]';
     ExpressionAttributeValues = {};
     ExpressionAttributeNames = {};
 
@@ -64,9 +65,11 @@ export class FilterExpression {
             throw "Operator not supported";
         }
 
+        let _key = key.replace(/^(_|\$)+/, '');
+
         let exp : string;
 
-        this.ExpressionAttributeNames['#' + key] = key;
+        this.ExpressionAttributeNames['#' + _key] = key;
         let index = Object.keys(this.ExpressionAttributeValues).filter(
             e => {
                 if (e.indexOf(':' + key) === 0) {
@@ -74,7 +77,7 @@ export class FilterExpression {
                 }
             }
         ).length;
-        this.ExpressionAttributeValues[':' + key + '_' + index] = value;
+        this.ExpressionAttributeValues[':' + _key + '_' + index] = value;
 
         switch (op) {
             case 'begins_with':
@@ -82,25 +85,55 @@ export class FilterExpression {
                 break;
             case 'attribute_exists':
                 exp = '( attribute_exists([key]) )';
+                delete this.ExpressionAttributeValues[':' + _key + '_' + index];
                 break;
             case 'attribute_not_exists':
                 exp = '( attribute_not_exists([key]) )';
+                delete this.ExpressionAttributeValues[':' + _key + '_' + index];
                 break;
             case 'contains':
-                exp = '( contains([key], [value]) )';
+                exp = '( contains([key], [value]) )';   
                 break;
             case 'IN':
-                this.ExpressionAttributeValues[':' + key + '_' + index] = '(' + this.ExpressionAttributeValues[':' + key + '_' + index].join() + ')';
-                exp = '( IN [value] )';
+                let _v = this.ExpressionAttributeValues[':' + _key + '_' + index];
+                if (_v.indexOf(null) > -1 || _v.indexOf(undefined) > -1) {
+                    if (_v.length == 2) {
+                        let _k = ':' + _key + '_' + index;
+                        this.ExpressionAttributeValues[_k] = _v.sort()[0];
+                        exp = '( [key] = [value] OR attribute_not_exists([key]) )';
+                    } else {
+                        let _vs = [];
+                        _v = _v.filter(e => e != null);
+                        _v.forEach(
+                            (e,i) => {
+                                let _k = ':' + _key + '_' + index + '_' + i;
+                                this.ExpressionAttributeValues[_k] = e;
+                                _vs.push(_k);
+                            }
+                        )
+                        exp = '( [key] IN [value] OR attribute_not_exists([key]) )'.replace('[value]', '(' + _vs.join() + ')');
+                    }
+                } else {
+                    let _vs = [];
+                    _v = _v.filter(e => e != null);
+                    _v.forEach(
+                        (e,i) => {
+                            let _k = ':' + _key + '_' + index + '_' + i;
+                            this.ExpressionAttributeValues[_k] = e;
+                            _vs.push(_k);
+                        }
+                    )
+                    exp = '( [key] IN [value] )'.replace('[value]', '(' + _vs.join() + ')');
+                }
                 break;
             default:
                 exp = '( [key] [op] [value] )';
                 break;
         }
 
-        exp = exp.replace('[key]', '#' + key);
-        exp = exp.replace('[value]', ':' + key + '_' + index);
-        exp = exp.replace('[op]', op);
+        exp = exp.replace(/\[key\]/g, '#' + _key);
+        exp = exp.replace(/\[value\]/g, ':' + _key + '_' + index);
+        exp = exp.replace(/\[op\]/g, op);
 
         if (not) {
             exp = '( NOT ' + exp + ' )';
@@ -110,15 +143,15 @@ export class FilterExpression {
     }
 
     build(query = {}, key = null, not = false, _op = null) : FilterExpression {
-        let exp;
-        let _cmp_;
+        console.log('Query', query);
+        let exp, _cmp_;
         Object.keys(query).forEach(
-            q => {
+            (q,i) => {
                 switch(q) {
                     case '$nor':
                         throw "Operator not supported";
                     case '$or':
-                    case '$and' :
+                    case '$and':
                         this.FilterExpression = this.FilterExpression.replace('[prev]','( [prev] ' + this.comperators[q] + ' [next] )');
                         query[q].forEach(
                             subquery => {
@@ -133,13 +166,21 @@ export class FilterExpression {
                     case '$gte':
                     case '$lte':
                         _cmp_ = not ? this.__not[q] : this.comperators[q];
-                        let exp = this.createExp(key, query[q], _cmp_, false);
+                        exp = this.createExp(key, query[q], _cmp_, false);
                         this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
                         this.FilterExpression = this.FilterExpression.replace('[next]', '[prev]');
                         break;
                     case '$in':
-                        exp = this.createExp(key, query[q], 'IN', false);
-                        this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
+                        let list = query[q] || [];
+                        if (list.length === 0) throw "$in cannot be empty";
+                        if (list.length === 1) {
+                            query[key] = query[q][0];
+                            delete query[q];
+                            this.build(query, key, not, _op);
+                        } else {
+                            exp = this.createExp(key, query[q], 'IN', false);
+                            this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
+                        }
                         break;
                     case '$nin':
                         exp = this.createExp(key, query[q], 'IN', true);
@@ -158,14 +199,95 @@ export class FilterExpression {
                     case '$not':
                         this.build(query[q], key, true, _op);
                         break;
+                    case '_id':
+                        break;
                     default:
                         if (query[q] instanceof Object) {
+                            if (i < (Object.keys(query).length - 1)) {
+                                this.FilterExpression = this.FilterExpression.replace('[prev]','( [prev] AND [prev] )');
+                            }
                             this.build(query[q], q, not, _op);
                         } else {
                             exp = this.createExp(q, query[q], '=', not);
                             this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
                             this.FilterExpression = this.FilterExpression.replace('[next]', '[prev]');
                         }
+                        break;
+                }
+            }
+        )
+
+        return this;
+    }
+
+    buildKC(query = {}, key = null, not = false, _op = null) : FilterExpression {
+        console.log('Query', query);
+        let exp, _cmp_;
+        Object.keys(query).forEach(
+            (q,i) => {
+                switch(q) {
+                    case '$nor':
+                        throw "Operator not supported";
+                    case '$or':
+                    case '$and':
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]','( [prev] ' + this.comperators[q] + ' [next] )');
+                        query[q].forEach(
+                            subquery => {
+                                this.buildKC(subquery, key, not, q);
+                            }
+                        )
+                        break;
+                    case '$eq':
+                    case '$ne':
+                    case '$gt':
+                    case '$lt':
+                    case '$gte':
+                    case '$lte':
+                        _cmp_ = not ? this.__not[q] : this.comperators[q];
+                        exp = this.createExp(key, query[q], _cmp_, false);
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[next]', '[prev]');
+                        break;
+                    case '$in':
+                        let list = query[q] || [];
+                        if (list.length === 0) throw "$in cannot be empty";
+                        if (list.length === 1) {
+                            query[key] = query[q][0];
+                            delete query[q];
+                            this.buildKC(query, key, not, _op);
+                        } else {
+                            exp = this.createExp(key, query[q], 'IN', false);
+                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                        }
+                        break;
+                    case '$nin':
+                        exp = this.createExp(key, query[q], 'IN', true);
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                        break;
+                    case '$regex':
+                        _cmp_ = query[q].startsWith('^') ? 'begins_with' : 'contains';
+                        exp = this.createExp(key, query[q], _cmp_, not);
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                        break;
+                    case '$exists':
+                        _cmp_ = query[q] ? 'attribute_exists' : 'attribute_not_exists';
+                        exp = this.createExp(key, query[q], _cmp_, not);
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                        break;
+                    case '$not':
+                        this.buildKC(query[q], key, true, _op);
+                        break;
+                    case '_id':
+                        console.log('_id ->', query[q], q, query);
+                        if (query[q] instanceof Object) {
+                            this.buildKC(query[q], q, not, _op);
+                        } else {
+                            exp = this.createExp(q, query[q], '=', not);
+                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[next]', '[prev]');
+                        }
+                        break;
+                    default:
                         break;
                 }
             }
@@ -243,7 +365,7 @@ export class Partition {
                         if (data.Item) {
                             delete data.Item._pk_className;
                         }
-                        resolve(data.Item);
+                        resolve([data.Item]);
                     }
                 })
             }
@@ -251,12 +373,19 @@ export class Partition {
     }
 
     _query(query: Object = {}, options : Options = {}, params : DynamoDB.DocumentClient.QueryInput = null, results = []) : Promise {
+        
+        const between = (n, a, b) => {
+            return (n - a) * (n - b) <= 0
+        }
+
         if (!params) {
             let keys = Object.keys(options.keys || {});
             let count = options.count ? true : false;
 
             // maximum by DynamoDB is 100 or 1MB
-            let limit = options.limit in [1, 100] ? options.limit : 100;
+            console.log('limit1', options.limit, between(options.limit, 1, 100));
+            let limit = between(options.limit, 1, 100) ? options.limit : 100;
+            console.log('limit2', limit);
 
             // DynamoDB sorts only by sort key (in our case the objectId
             options.sort = options.sort || {};
@@ -291,6 +420,16 @@ export class Partition {
                 _params.FilterExpression = exp.FilterExpression;
                 _params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
                 _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+
+                exp = exp.buildKC(query);
+                console.log('kc_exp', exp);
+                if (exp.KeyConditionExpression !== '[prev]') {
+                    _params.KeyConditionExpression = '( ( #className = :className ) AND [next] )';
+                    _params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
+                    _params.ExpressionAttributeNames['#className'] = '_pk_className';
+                    _params.ExpressionAttributeValues[':className'] = this.className;
+                    delete _params.KeyConditions;
+                }
             }
 
             if (descending) {
@@ -310,8 +449,8 @@ export class Partition {
                         reject(err);
                     } else {
                         results = results.concat(data.Items || []);
-                        if (data.LastEvaluatedKey && results.length < 100) {
-                            options.limit = 100 - results.length;
+                        if (data.LastEvaluatedKey && (results.length < options.limit)) {
+                            options.limit = options.limit - results.length;
                             params.ExclusiveStartKey = data.LastEvaluatedKey;
                             return this._query(query, options, params, results);
                         }
@@ -331,7 +470,7 @@ export class Partition {
     }
 
     find(query: Object = {}, options : Options = {}) : Promise {
-        if (query.hasOwnProperty('_id')) {
+        if (query.hasOwnProperty('_id') && typeof query['_id'] === 'string') {
             let id = query['_id'];
             let keys = Object.keys(options.keys || {});
             return this._get(id, keys);
@@ -378,12 +517,15 @@ export class Partition {
     }
 
     updateOne(query = {}, object : Object) : Promise {
+        console.log('uquery', query);
+        console.log('uobject', object);
         let id = query['_id'] || object['_id'];
         let params : DynamoDB.DocumentClient.UpdateItemInput = {
             TableName : this.database,
             Key: {
                 _pk_className : this.className
-            }
+            },
+            ReturnValues : 'UPDATED_NEW'
         }
 
         if (id) {
@@ -400,14 +542,38 @@ export class Partition {
 
         delete object['_id'];
         if (Object.keys(object).length > 0) {
+            let $set = object, $unset = [];
+            if (object.hasOwnProperty('$set')) {
+                $set = object['$set'] || {};
+            }
+
+            if (object.hasOwnProperty('$unset')) {
+                $unset = Object.keys((object['$unset'] || {}));
+            }
+
+            object = null; // destroy object;
+
             params.AttributeUpdates = {};
-            for (let key in object) {
-                let action = object[key] === undefined ? 'DELETE' : 'PUT';
+            for (let key in $set) {
+                let action = $set[key] === undefined ? 'DELETE' : 'PUT';
+                if ($set[key] instanceof Date) {
+                    $set[key] = $set[key].toISOString();
+                }
+
                 params.AttributeUpdates[key] = {
-                    Action : action,
-                    Value : object[key]
+                    Action : action
+                }
+
+                if (action == 'PUT') {
+                    params.AttributeUpdates[key].Value = $set[key];
                 }
             }
+
+            $unset.forEach(key => {
+                params.AttributeUpdates[key] = {
+                    Action : 'DELETE'
+                }
+            });
         }
 
         console.log('update', u.inspect(params, false, null));
@@ -416,8 +582,10 @@ export class Partition {
             (resolve, reject) => {
                 this.dynamo.update(params, (err, data) => {
                     if (err) {
+                        console.log('uerr', err);
                         reject(err);
                     } else {
+                        console.log('udata', data);
                         resolve({
                             ok : 1,
                             n : 1,

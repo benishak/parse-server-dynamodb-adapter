@@ -109,11 +109,14 @@ export class SchemaPartition extends Partition {
     _fetchAllSchemasFrom_SCHEMA() {
         return this.find().then(
             schemas => schemas.map(mongoSchemaToParseSchema)
-        ).catch(console.log);
+        ).catch(
+            error => { throw error }
+        );
     }
 
     _fechOneSchemaFrom_SCHEMA(name: string) {
         let query = _mongoSchemaQueryFromNameQuery(name);
+        
         return this.find(query, { limit: 1 }).then(
             result => {
                 if (result) {
@@ -140,10 +143,11 @@ export class SchemaPartition extends Partition {
 
     addFieldIfNotExists(className: string, fieldName: string, type: sType) {
         let query = _mongoSchemaQueryFromNameQuery(className);
-        console.log('addField', query);
-        console.log('ttt', type);
+
         return this.upsertOne(query, {
             [fieldName] : parseFieldTypeToMongoFieldType(type)
-        }).then(x => console.log('XXX', x)).catch(ee => console.log('EEE', ee));
+        }).catch(
+            error => { throw error }
+        )
     }
 }

@@ -2,23 +2,26 @@ import { Partition, FilterExpression } from './DynamoPartition';
 import { Adapter } from './DynamoAdapter';
 
 class DynamoDB {
-    Partition = Partition
-    Query = FilterExpression
+    Partition = Partition;
+    QueryExpression = FilterExpression;
 
     Adapter : Adapter;
 
-    getAdapter(database, setting) {
-        if (!this.Adapter) {
-            this.Adapter = new Adapter(database, setting);
+    constructor(readonly database, readonly settings) {
+        this.database = database;
+        this.settings = settings;
+    }
+
+    getAdapter() {
+        if (this.Adapter) {
+            return this.Adapter
         }
 
-        this.Adapter = new Adapter(database, setting);
+        this.Adapter = new Adapter(this.database, this.settings);
         return this.Adapter;
     }
 }
 
 export {
-    DynamoDB,
-    Partition,
-    FilterExpression
+    DynamoDB
 }

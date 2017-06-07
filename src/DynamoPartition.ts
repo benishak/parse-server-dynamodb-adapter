@@ -4,9 +4,7 @@
 
 import { DynamoDB } from 'aws-sdk';
 import * as Promise from 'bluebird';
-
-
-var u = require('util');
+var u = require('util'); // for debugging;
 
 type Options = {
     skip? : Object, // not supported
@@ -143,7 +141,6 @@ export class FilterExpression {
     }
 
     build(query = {}, key = null, not = false, _op = null) : FilterExpression {
-        console.log('Query', query);
         let exp, _cmp_;
         Object.keys(query).forEach(
             (q,i) => {
@@ -221,7 +218,6 @@ export class FilterExpression {
     }
 
     buildKC(query = {}, key = null, not = false, _op = null) : FilterExpression {
-        console.log('Query', query);
         let exp, _cmp_;
         Object.keys(query).forEach(
             (q,i) => {
@@ -278,7 +274,6 @@ export class FilterExpression {
                         this.buildKC(query[q], key, true, _op);
                         break;
                     case '_id':
-                        console.log('_id ->', query[q], q, query);
                         if (query[q] instanceof Object) {
                             this.buildKC(query[q], q, not, _op);
                         } else {
@@ -352,16 +347,12 @@ export class Partition {
             params.AttributesToGet = keys;
         }
 
-        console.log('get', u.inspect(params, false, null));
-
         return new Promise(
             (resolve, reject) => {
                 this.dynamo.get(params, (err, data) => {
                     if (err) {
-                        console.log('err get', err);
                         reject(err);
                     } else {
-                        console.log('result get', data);
                         if (data.Item) {
                             delete data.Item._pk_className;
                         }
@@ -383,9 +374,7 @@ export class Partition {
             let count = options.count ? true : false;
 
             // maximum by DynamoDB is 100 or 1MB
-            console.log('limit1', options.limit, between(options.limit, 1, 100));
             let limit = between(options.limit, 1, 100) ? options.limit : 100;
-            console.log('limit2', limit);
 
             // DynamoDB sorts only by sort key (in our case the objectId
             options.sort = options.sort || {};
@@ -422,7 +411,6 @@ export class Partition {
                 _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
 
                 exp = exp.buildKC(query);
-                console.log('kc_exp', exp);
                 if (exp.KeyConditionExpression !== '[prev]') {
                     _params.KeyConditionExpression = '( ( #className = :className ) AND [next] )';
                     _params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
@@ -439,13 +427,10 @@ export class Partition {
             params = _params;
         }
 
-        console.log('query',u.inspect(params, false, null));
-
         return new Promise(
             (resolve, reject) => {
                 this.dynamo.query(params, (err, data) => {
                     if (err) {
-                        console.log('err', err);
                         reject(err);
                     } else {
                         results = results.concat(data.Items || []);
@@ -458,7 +443,7 @@ export class Partition {
                         if (options.count) {
                             resolve(data.Count ? data.Count : 0);
                         }
-                        console.log('results', results);
+
                         results.forEach((item) => {
                             delete item._pk_className;
                         });
@@ -496,8 +481,6 @@ export class Partition {
             }
         }
 
-        console.log('insert', u.inspect(params, false, null));
-
         return new Promise(
             (resolve, reject) => {
                 this.dynamo.put(params, (err, data) => {
@@ -517,8 +500,6 @@ export class Partition {
     }
 
     updateOne(query = {}, object : Object) : Promise {
-        console.log('uquery', query);
-        console.log('uobject', object);
         let id = query['_id'] || object['_id'];
         let params : DynamoDB.DocumentClient.UpdateItemInput = {
             TableName : this.database,
@@ -576,16 +557,12 @@ export class Partition {
             });
         }
 
-        console.log('update', u.inspect(params, false, null));
-
         return new Promise(
             (resolve, reject) => {
                 this.dynamo.update(params, (err, data) => {
                     if (err) {
-                        console.log('uerr', err);
                         reject(err);
                     } else {
-                        console.log('udata', data);
                         resolve({
                             ok : 1,
                             n : 1,

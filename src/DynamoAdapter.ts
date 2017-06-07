@@ -107,7 +107,6 @@ export class Adapter {
     createClass(className, schema) {
         return this.classExists(className).then(
             partition => {
-                console.log('partition', partition);
                 if (!partition) {
                     schema = Transform.convertParseSchemaToMongoSchema(schema);
                     const mongoObject = Transform.mongoSchemaFromFieldsAndClassNameAndCLP(schema.fields, className, schema.classLevelPermissions);
@@ -127,7 +126,9 @@ export class Adapter {
                     throw new Parse.Error(Parse.Error.DUPLICATE_VALUE, 'Class already exists.');
                 }
             }
-        ).catch(console.log)
+        ).catch(
+            error => { throw error }
+        )
     }
 
     addFieldIfNotExists(className, fieldName, type) {
@@ -173,7 +174,6 @@ export class Adapter {
                 if (object[key] instanceof Object) {
                     if (object[key].hasOwnProperty('__type')) {
                         if ((object[key].__type || "").toLowerCase() == 'date') {
-                            console.log('date iso',object[key], object[key].iso);
                             object[key] = new Date(object[key].iso || new Date());
                             try {
                                 object[key] = object[key].toISOString();
@@ -259,7 +259,7 @@ export class Adapter {
             memo[Transform.transformKey(className, key, schema)] = 1;
             return memo;
         }, {});
-        console.log('options ->', { skip, limit, sort, keys});
+        
         return this._adaptiveCollection(className).find(query, { skip, limit, sort, keys})
             .then(
                 objects => objects.map(object => Transform.mongoObjectToParseObject(className, object, schema))

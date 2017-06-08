@@ -13,6 +13,225 @@ const __ops2 = ['$exists'];
 
 @suite class DDBQuery {
 
+    @test 'DynamoDB KeyConditionrExpression : simple query of _id'() {
+        let exp = new Query();
+        exp.buildKC({
+            _id : "abc"
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':id_0');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal('abc');
+        expect(exp.KeyConditionExpression).to.be.equal('#id = :id_0');
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : single query of _id'() {
+        __ops1.forEach(
+            op => {
+                let exp = new Query();
+                exp.buildKC({ 
+                    _id : {
+                        [op] : 123
+                    }
+                });
+                
+                expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+                expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
+                expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+                expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':id_0');
+                expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+                expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(123);
+                expect(exp.KeyConditionExpression).to.be.equal(
+                    '#id [op] :id_0'.replace('[op]', exp.comperators[op])
+                )
+            }
+        )
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : single query of _id with $not'() {
+        __ops1.forEach(
+            op => {
+                let exp = new Query();
+                exp.buildKC({
+                    _id : {
+                        $not : { [op] : 123 }
+                    }
+                });
+                
+                expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+                expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
+                expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+                expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':id_0');
+                expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+                expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(123);
+                expect(exp.KeyConditionExpression).to.be.equal(
+                    '#id [op] :id_0'.replace('[op]', exp.__not[op])
+                )
+            }
+        )
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : $and query of _id'() {
+        let exp = new Query();
+        exp.buildKC({
+            $and : [
+                { _id : 123 },
+                { _id : 111 }
+            ]
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.KeyConditionExpression).to.be.equal('#id = :id_0 AND #id = :id_1');
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : $and query of _id with $not'() {
+        let exp = new Query();
+        exp.buildKC({
+            $and : [
+                { _id : { $not : { $eq : 123 } } },
+                { _id : { $not : { $eq : 111 } } }
+            ]
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.KeyConditionExpression).to.be.equal('#id <> :id_0 AND #id <> :id_1');
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : $or query of _id'() {
+        let exp = new Query();
+        exp.buildKC({
+            $or : [
+                { _id : 123 },
+                { _id : 111 }
+            ]
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.KeyConditionExpression).to.be.equal('#id = :id_0 OR #id = :id_1');
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : range query _id'() {
+        let exp = new Query();
+        exp.buildKC({
+            _id : {
+                $gt : 1000,
+                $lt : 2000
+            }
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(1000);
+        expect(exp.ExpressionAttributeValues[':id_1']).to.be.equal(2000);
+        expect((exp.KeyConditionExpression.match(/AND/g) || []).length).to.be.equal(1);
+        expect(exp.KeyConditionExpression).to.be.equal(
+            '#id > :id_0 AND #id < :id_1'
+        );
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : select query _id with $in'() {
+        let exp = new Query();
+        exp.buildKC({
+            _id : { $in : [1000, 2000] }
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(3);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.ExpressionAttributeValues[':id_0_0']).to.be.equal(1000);
+        expect(exp.ExpressionAttributeValues[':id_0_1']).to.be.equal(2000);
+        expect(exp.KeyConditionExpression).to.be.equal(
+            '#id IN (:id_0_0,:id_0_1)'
+        );
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : select query _id with $nin'() {
+        let exp = new Query();
+        exp.buildKC({
+            _id : { $nin : [1000, 2000] }
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(3);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.ExpressionAttributeValues[':id_0_0']).to.be.equal(1000);
+        expect(exp.ExpressionAttributeValues[':id_0_1']).to.be.equal(2000);
+        expect(exp.KeyConditionExpression).to.be.equal(
+            'NOT ( #id IN (:id_0_0,:id_0_1) )'
+        );
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : select query _id with $not and $in'() {
+        let exp = new Query();
+        exp.buildKC({
+            _id : { $not : { $in : [1000, 2000] } }
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(3);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.ExpressionAttributeValues[':id_0_0']).to.be.equal(1000);
+        expect(exp.ExpressionAttributeValues[':id_0_1']).to.be.equal(2000);
+        expect(exp.KeyConditionExpression).to.be.equal(
+            'NOT ( #id IN (:id_0_0,:id_0_1) )'
+        );
+    }
+
+    @test 'DynamoDB KeyConditionrExpression : complex query _id'() {
+        let exp = new Query();
+        exp.buildKC({
+            _id : {
+                $gt : 1000,
+                $lt : 2000,
+                $ne : 5000
+            }
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(3);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(1000);
+        expect(exp.ExpressionAttributeValues[':id_1']).to.be.equal(2000);
+        expect(exp.ExpressionAttributeValues[':id_2']).to.be.equal(5000);
+        expect((exp.KeyConditionExpression.match(/AND/g) || []).length).to.be.equal(2);
+        expect(exp.KeyConditionExpression).to.be.equal(
+            '#id > :id_0 AND #id < :id_1 AND #id <> :id_2'
+        );
+    }
+
+    @test 'DynamoDB FilterExpression : simple query with single key'() {
+        let exp = new Query();
+        exp.build({ 
+            "string" : "abc"
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#string');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':string_0');
+        expect(exp.ExpressionAttributeNames['#string']).to.be.equal('string');
+        expect(exp.ExpressionAttributeValues[':string_0']).to.be.equal('abc');
+        expect(exp.FilterExpression).to.be.equal('#string = :string_0');
+    }
+
     @test 'DynamoDB FilterExpression : single query with single key'() {
         __ops1.forEach(
             op => {

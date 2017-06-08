@@ -70,6 +70,7 @@ export class FilterExpression {
     }
 
     createExp(key, value, op, not = false) {
+        
         if (!op) {
             throw "Operator not supported";
         }
@@ -81,11 +82,12 @@ export class FilterExpression {
         this.ExpressionAttributeNames['#' + _key] = key;
         let index = Object.keys(this.ExpressionAttributeValues).filter(
             e => {
-                if (e.indexOf(':' + key) === 0) {
+                if (e.indexOf(':' + _key) === 0) {
                     return e;
                 }
             }
         ).length;
+
         this.ExpressionAttributeValues[':' + _key + '_' + index] = value;
 
         switch (op) {
@@ -244,14 +246,33 @@ export class FilterExpression {
         let exp, _cmp_;
         Object.keys(query).forEach(
             (q,i) => {
+
+                if (i < Object.keys(query).length - 1 && Object.keys(query).length > 1) {
+                    if (_op) {
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]','( [first] AND [next] )');
+                    } else {
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]','[first] AND [next]');
+                    }
+                }
+
+                if (i < Object.keys(query).length) {
+                     this.KeyConditionExpression = this.KeyConditionExpression.replace('[next]', '[first]');
+                }
+
                 switch(q) {
                     case '$nor':
                         throw "Operator not supported";
                     case '$or':
                     case '$and':
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]','( [prev] ' + this.comperators[q] + ' [next] )');
                         query[q].forEach(
-                            subquery => {
+                            (subquery,j) => {
+                                if (j < Object.keys(query[q]).length - 1 && Object.keys(query[q]).length > 1) {
+                                    if (_op == '$and') {
+                                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]','( [first] ' + this.comperators[q] + ' [next] )');
+                                    } else {
+                                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]','[first] ' + this.comperators[q] + ' [next]');
+                                    }
+                                }
                                 this.buildKC(subquery, key, not, q);
                             }
                         )
@@ -264,10 +285,10 @@ export class FilterExpression {
                     case '$lte':
                         _cmp_ = not ? this.__not[q] : this.comperators[q];
                         exp = this.createExp(key, query[q], _cmp_, false);
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[next]', '[prev]');
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
                         break;
                     case '$in':
+                    case '$nin':
                         let list = query[q] || [];
                         if (list.length === 0) throw "$in cannot be empty";
                         if (list.length === 1) {
@@ -275,34 +296,30 @@ export class FilterExpression {
                             delete query[q];
                             this.buildKC(query, key, not, _op);
                         } else {
-                            exp = this.createExp(key, query[q], 'IN', false);
-                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                            not = q == '$nin' ? true : not;
+                            exp = this.createExp(key, query[q], 'IN', not);
+                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
                         }
-                        break;
-                    case '$nin':
-                        exp = this.createExp(key, query[q], 'IN', true);
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
                         break;
                     case '$regex':
                         _cmp_ = query[q].startsWith('^') ? 'begins_with' : 'contains';
                         exp = this.createExp(key, query[q], _cmp_, not);
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
                         break;
                     case '$exists':
                         _cmp_ = query[q] ? 'attribute_exists' : 'attribute_not_exists';
                         exp = this.createExp(key, query[q], _cmp_, not);
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
+                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
                         break;
                     case '$not':
                         this.buildKC(query[q], key, true, _op);
                         break;
                     case '_id':
-                        if (query[q] instanceof Object) {
+                        if (query[q].constructor === Object && this.isQuery(query[q])) {
                             this.buildKC(query[q], q, not, _op);
                         } else {
                             exp = this.createExp(q, query[q], '=', not);
-                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[prev]', exp);
-                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[next]', '[prev]');
+                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
                         }
                         break;
                     default:
@@ -434,7 +451,8 @@ export class Partition {
                 _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
 
                 exp = exp.buildKC(query);
-                if (exp.KeyConditionExpression !== '[prev]') {
+                console.log('KC ->', query, exp.KeyConditionExpression);
+                if (!exp.KeyConditionExpression.startsWith('[first]')) {
                     _params.KeyConditionExpression = '( ( #className = :className ) AND [next] )';
                     _params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
                     _params.ExpressionAttributeNames['#className'] = '_pk_className';

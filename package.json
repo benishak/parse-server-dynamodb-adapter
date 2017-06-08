@@ -15,6 +15,7 @@
     "@types/aws-sdk": "^2.7.0",
     "@types/node": "^7.0.27",
     "aws-sdk": "^2.62.0",
+    "aws-sdk-mock": "^1.7.0",
     "parse": "^1.9.2",
     "parse-server": "^2.4.2"
   },

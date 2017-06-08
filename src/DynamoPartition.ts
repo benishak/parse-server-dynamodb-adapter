@@ -29,8 +29,8 @@ const DynamoComperator = {
 // helper class to generate DynamoDB FilterExpression from MongoDB Query Object
 export class FilterExpression {
 
-    FilterExpression : string = '[prev]';
-    KeyConditionExpression : string = '[prev]';
+    FilterExpression : string = '[first]';
+    KeyConditionExpression : string = '[first]';
     ExpressionAttributeValues = {};
     ExpressionAttributeNames = {};
 
@@ -44,7 +44,10 @@ export class FilterExpression {
         '$in' : 'IN',
         '$or' : 'OR',
         '$and' : 'AND',
-        '$not' : 'NOT'
+        '$not' : 'NOT',
+        '$exists' : '*',
+        '$regex' : '*',
+        '$nin' : '*',
     }
 
     __not = {
@@ -57,6 +60,14 @@ export class FilterExpression {
     }
 
     constructor() {}
+
+    isQuery(object : Object = {}) {
+        let $ = true;
+        for (let key in object) {
+            $ = $ && (this.comperators[key] != undefined)
+        }
+        return $;
+    }
 
     createExp(key, value, op, not = false) {
         if (!op) {
@@ -79,18 +90,18 @@ export class FilterExpression {
 
         switch (op) {
             case 'begins_with':
-                exp = '( begins_with([key], [value]) )';
+                exp = 'begins_with([key], [value])';
                 break;
             case 'attribute_exists':
-                exp = '( attribute_exists([key]) )';
+                exp = 'attribute_exists([key])';
                 delete this.ExpressionAttributeValues[':' + _key + '_' + index];
                 break;
             case 'attribute_not_exists':
-                exp = '( attribute_not_exists([key]) )';
+                exp = 'attribute_not_exists([key])';
                 delete this.ExpressionAttributeValues[':' + _key + '_' + index];
                 break;
             case 'contains':
-                exp = '( contains([key], [value]) )';   
+                exp = 'contains([key], [value])';   
                 break;
             case 'IN':
                 let _v = this.ExpressionAttributeValues[':' + _key + '_' + index];
@@ -98,7 +109,7 @@ export class FilterExpression {
                     if (_v.length == 2) {
                         let _k = ':' + _key + '_' + index;
                         this.ExpressionAttributeValues[_k] = _v.sort()[0];
-                        exp = '( [key] = [value] OR attribute_not_exists([key]) )';
+                        exp = '[key] = [value] OR attribute_not_exists([key])';
                     } else {
                         let _vs = [];
                         _v = _v.filter(e => e != null);
@@ -109,7 +120,7 @@ export class FilterExpression {
                                 _vs.push(_k);
                             }
                         )
-                        exp = '( [key] IN [value] OR attribute_not_exists([key]) )'.replace('[value]', '(' + _vs.join() + ')');
+                        exp = '[key] IN [value] OR attribute_not_exists([key])'.replace('[value]', '(' + _vs.join() + ')');
                     }
                 } else {
                     let _vs = [];
@@ -121,11 +132,11 @@ export class FilterExpression {
                             _vs.push(_k);
                         }
                     )
-                    exp = '( [key] IN [value] )'.replace('[value]', '(' + _vs.join() + ')');
+                    exp = '[key] IN [value]'.replace('[value]', '(' + _vs.join() + ')');
                 }
                 break;
             default:
-                exp = '( [key] [op] [value] )';
+                exp = '[key] [op] [value]';
                 break;
         }
 
@@ -134,7 +145,7 @@ export class FilterExpression {
         exp = exp.replace(/\[op\]/g, op);
 
         if (not) {
-            exp = '( NOT ' + exp + ' )';
+            exp = 'NOT ( ' + exp + ' )';
         }
 
         return exp;
@@ -144,14 +155,33 @@ export class FilterExpression {
         let exp, _cmp_;
         Object.keys(query).forEach(
             (q,i) => {
+
+                if (i < Object.keys(query).length - 1 && Object.keys(query).length > 1) {
+                    if (_op) {
+                        this.FilterExpression = this.FilterExpression.replace('[first]','( [first] AND [next] )');
+                    } else {
+                        this.FilterExpression = this.FilterExpression.replace('[first]','[first] AND [next]');
+                    }
+                }
+
+                if (i < Object.keys(query).length) {
+                     this.FilterExpression = this.FilterExpression.replace('[next]', '[first]');
+                }
+
                 switch(q) {
                     case '$nor':
                         throw "Operator not supported";
                     case '$or':
                     case '$and':
-                        this.FilterExpression = this.FilterExpression.replace('[prev]','( [prev] ' + this.comperators[q] + ' [next] )');
                         query[q].forEach(
-                            subquery => {
+                            (subquery,j) => {
+                                if (j < Object.keys(query[q]).length - 1 && Object.keys(query[q]).length > 1) {
+                                    if (_op == '$and') {
+                                        this.FilterExpression = this.FilterExpression.replace('[first]','( [first] ' + this.comperators[q] + ' [next] )');
+                                    } else {
+                                        this.FilterExpression = this.FilterExpression.replace('[first]','[first] ' + this.comperators[q] + ' [next]');
+                                    }
+                                }
                                 this.build(subquery, key, not, q);
                             }
                         )
@@ -164,10 +194,10 @@ export class FilterExpression {
                     case '$lte':
                         _cmp_ = not ? this.__not[q] : this.comperators[q];
                         exp = this.createExp(key, query[q], _cmp_, false);
-                        this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
-                        this.FilterExpression = this.FilterExpression.replace('[next]', '[prev]');
+                        this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         break;
                     case '$in':
+                    case '$nin':
                         let list = query[q] || [];
                         if (list.length === 0) throw "$in cannot be empty";
                         if (list.length === 1) {
@@ -175,23 +205,20 @@ export class FilterExpression {
                             delete query[q];
                             this.build(query, key, not, _op);
                         } else {
-                            exp = this.createExp(key, query[q], 'IN', false);
-                            this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
+                            not = q == '$nin' ? true : not;
+                            exp = this.createExp(key, query[q], 'IN', not);
+                            this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         }
-                        break;
-                    case '$nin':
-                        exp = this.createExp(key, query[q], 'IN', true);
-                        this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
                         break;
                     case '$regex':
                         _cmp_ = query[q].startsWith('^') ? 'begins_with' : 'contains';
                         exp = this.createExp(key, query[q], _cmp_, not);
-                        this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
+                        this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         break;
                     case '$exists':
                         _cmp_ = query[q] ? 'attribute_exists' : 'attribute_not_exists';
                         exp = this.createExp(key, query[q], _cmp_, not);
-                        this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
+                        this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         break;
                     case '$not':
                         this.build(query[q], key, true, _op);
@@ -199,15 +226,11 @@ export class FilterExpression {
                     case '_id':
                         break;
                     default:
-                        if (query[q] instanceof Object) {
-                            if (i < (Object.keys(query).length - 1)) {
-                                this.FilterExpression = this.FilterExpression.replace('[prev]','( [prev] AND [prev] )');
-                            }
+                        if (query[q].constructor === Object && this.isQuery(query[q])) {
                             this.build(query[q], q, not, _op);
                         } else {
                             exp = this.createExp(q, query[q], '=', not);
-                            this.FilterExpression = this.FilterExpression.replace('[prev]', exp);
-                            this.FilterExpression = this.FilterExpression.replace('[next]', '[prev]');
+                            this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         }
                         break;
                 }

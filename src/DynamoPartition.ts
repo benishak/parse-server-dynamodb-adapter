@@ -73,7 +73,7 @@ export class FilterExpression {
     createExp(key, value, op, not = false) {
         
         if (!op) {
-            throw new Parse.Error(Parse.Error.INVALID_QUERY, "Operator not supported");
+            throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Operation is not supported');
         }
 
         let _key = key.replace(/^(_|\$)+/, '');
@@ -177,7 +177,7 @@ export class FilterExpression {
 
                 switch(q) {
                     case '$nor':
-                        throw new Parse.Error(Parse.Error.INVALID_QUERY, "Operator not supported");
+                        throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Operator [' + q + '] not supported');
                     case '$or':
                     case '$and':
                         query[q].forEach(
@@ -206,7 +206,7 @@ export class FilterExpression {
                     case '$in':
                     case '$nin':
                         let list = query[q] || [];
-                        if (list.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, "$in cannot be empty");
+                        if (list.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [$in] cannot be empty');
                         if (list.length === 1) {
                             query[key] = query[q][0];
                             delete query[q];
@@ -275,9 +275,14 @@ export class FilterExpression {
                 }
 
                 switch(q) {
-                    case '$nor':
-                        throw new Parse.Error(Parse.Error.INVALID_QUERY, "Operator not supported");
+                    case '$ne':
+                    case '$in':
+                    case '$nin':
                     case '$or':
+                    case '$nor':
+                    case '$not':
+                    case '$exists':
+                        throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Cannot apply [' + q + '] on objectId');
                     case '$and':
                         query[q].forEach(
                             (subquery,j) => {
@@ -293,7 +298,6 @@ export class FilterExpression {
                         )
                         break;
                     case '$eq':
-                    case '$ne':
                     case '$gt':
                     case '$lt':
                     case '$gte':
@@ -301,20 +305,6 @@ export class FilterExpression {
                         _cmp_ = not ? this.__not[q] : this.comperators[q];
                         exp = this.createExp(key, query[q], _cmp_, false);
                         this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
-                        break;
-                    case '$in':
-                    case '$nin':
-                        let list = query[q] || [];
-                        if (list.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, "$in cannot be empty");
-                        if (list.length === 1) {
-                            query[key] = query[q][0];
-                            delete query[q];
-                            this.buildKC(query, key, not, _op);
-                        } else {
-                            not = q == '$nin' ? true : not;
-                            exp = this.createExp(key, query[q], 'IN', not);
-                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
-                        }
                         break;
                     case '$regex':
                         _cmp_ = query[q].startsWith('^') ? 'begins_with' : null;
@@ -324,16 +314,8 @@ export class FilterExpression {
                             exp = this.createExp(key, query[q], _cmp_, not);
                             this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
                         } else {
-                            throw new Parse.Error(Parse.Error.INVALID_QUERY, "Cannot apply 'contains' on 'objectId'");
+                            throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Cannot apply [contains] on objectId');
                         }
-                        break;
-                    case '$exists':
-                        _cmp_ = query[q] ? 'attribute_exists' : 'attribute_not_exists';
-                        exp = this.createExp(key, query[q], _cmp_, not);
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
-                        break;
-                    case '$not':
-                        this.buildKC(query[q], key, true, _op);
                         break;
                     case '_id':
                         if (query[q].constructor === Object && this.isQuery(query[q])) {
@@ -435,7 +417,11 @@ export class Partition {
                         if (data.Item) {
                             delete data.Item._pk_className;
                         }
-                        resolve([data.Item]);
+                        if (data.Item) {
+                            resolve([data.Item]);
+                        } else {
+                            resolve([]);
+                        }
                     }
                 })
             }

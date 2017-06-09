@@ -8,24 +8,25 @@ import { _ } from 'lodash';
 
 const schemaTable = '_SCHEMA';
 
+// not used at the moment but can be helpful in the future!
 const DynamoType = type => {
     switch (type.type) {
-        case 'String': return 'S';
-        case 'Date': return 'M';
-        case 'Object': return 'M';
-        case 'File': return 'M';
-        case 'Boolean': return 'BOOL';
-        case 'Pointer': return 'M';
-        case 'Relation' : return 'M';
-        case 'Number': return 'N';
-        case 'GeoPoint': return 'M';
+        case 'String': return 'S'; // string
+        case 'Date': return 'S';   // string
+        case 'Object': return 'M'; // object
+        case 'File': return 'M';   // object
+        case 'Boolean': return 'BOOL'; // boolean
+        case 'Pointer': return 'S'; // string
+        case 'Relation' : return 'M'; // string
+        case 'Number': return 'N'; // number
+        case 'GeoPoint': return 'M'; // object
         case 'Array':
             if (type.contents && type.contents.type === 'String') {
-                return 'SS';
+                return 'SS'; // string[]
             } else if (type.contents && type.contents.type === 'Number') {
-                return 'NS';
+                return 'NS'; // number[]
             } else {
-                return 'L';
+                return 'L'; // array
             }
         default: throw `no type for ${JSON.stringify(type)} yet`;
     }
@@ -93,7 +94,8 @@ export class Adapter {
     classExists(name : string) : Promise {
         return this._schemaCollection().find({ _id : name }).then(
             partition => {
-                return partition !== undefined;
+                console.log('partition ***', partition);
+                return partition.length > 0;
             }
         )
     }
@@ -201,7 +203,8 @@ export class Adapter {
                     object[key] = object[key].toISOString();
                 }
             }
-        )
+        );
+
         return this._adaptiveCollection(className).insertOne(object)
             .catch(
                 (error) => {
@@ -225,7 +228,7 @@ export class Adapter {
             )
             .catch(
                 error => {
-                    throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'Database adapter error');
+                    throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB adapter error');
                 }
             )
     }
@@ -268,7 +271,7 @@ export class Adapter {
                 (error) => {
                     Promise.reject(error);
                 }
-            )
+            );
     }
 
     ensureUniqueness(className, schema, fieldNames) {

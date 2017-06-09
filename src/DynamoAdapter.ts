@@ -264,6 +264,11 @@ export class Adapter {
             .then(
                 objects => objects.map(object => Transform.mongoObjectToParseObject(className, object, schema))
             )
+            .catch(
+                (error) => {
+                    Promise.reject(error);
+                }
+            )
     }
 
     ensureUniqueness(className, schema, fieldNames) {

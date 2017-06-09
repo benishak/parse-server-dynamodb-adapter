@@ -4,6 +4,7 @@
 
 import { DynamoDB } from 'aws-sdk';
 import * as Promise from 'bluebird';
+import { Parse } from 'parse/node';
 var u = require('util'); // for debugging;
 
 type Options = {
@@ -72,7 +73,7 @@ export class FilterExpression {
     createExp(key, value, op, not = false) {
         
         if (!op) {
-            throw "Operator not supported";
+            throw new Parse.Error(Parse.Error.INVALID_QUERY, "Operator not supported");
         }
 
         let _key = key.replace(/^(_|\$)+/, '');
@@ -111,7 +112,7 @@ export class FilterExpression {
                     if (_v.length == 2) {
                         let _k = ':' + _key + '_' + index;
                         this.ExpressionAttributeValues[_k] = _v.sort()[0];
-                        exp = '[key] = [value] OR attribute_not_exists([key])';
+                        exp = '( [key] = [value] OR attribute_not_exists([key]) )';
                     } else {
                         let _vs = [];
                         _v = _v.filter(e => e != null);
@@ -122,7 +123,7 @@ export class FilterExpression {
                                 _vs.push(_k);
                             }
                         )
-                        exp = '[key] IN [value] OR attribute_not_exists([key])'.replace('[value]', '(' + _vs.join() + ')');
+                        exp = '( [key] IN [value] OR attribute_not_exists([key]) )'.replace('[value]', '(' + _vs.join() + ')');
                     }
                 } else {
                     let _vs = [];
@@ -158,6 +159,10 @@ export class FilterExpression {
         Object.keys(query).forEach(
             (q,i) => {
 
+                if (query['_id']) {
+                    delete query['_id'];
+                }
+
                 if (i < Object.keys(query).length - 1 && Object.keys(query).length > 1) {
                     if (_op) {
                         this.FilterExpression = this.FilterExpression.replace('[first]','( [first] AND [next] )');
@@ -172,7 +177,7 @@ export class FilterExpression {
 
                 switch(q) {
                     case '$nor':
-                        throw "Operator not supported";
+                        throw new Parse.Error(Parse.Error.INVALID_QUERY, "Operator not supported");
                     case '$or':
                     case '$and':
                         query[q].forEach(
@@ -201,7 +206,7 @@ export class FilterExpression {
                     case '$in':
                     case '$nin':
                         let list = query[q] || [];
-                        if (list.length === 0) throw "$in cannot be empty";
+                        if (list.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, "$in cannot be empty");
                         if (list.length === 1) {
                             query[key] = query[q][0];
                             delete query[q];
@@ -214,6 +219,9 @@ export class FilterExpression {
                         break;
                     case '$regex':
                         _cmp_ = query[q].startsWith('^') ? 'begins_with' : 'contains';
+                        query[q] = query[q].replace('^', '');
+                        query[q] = query[q].replace('\\Q', '');
+                        query[q] = query[q].replace('\\E', '');
                         exp = this.createExp(key, query[q], _cmp_, not);
                         this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         break;
@@ -244,10 +252,17 @@ export class FilterExpression {
 
     buildKC(query = {}, key = null, not = false, _op = null) : FilterExpression {
         let exp, _cmp_;
+
+        if (Object.keys(query).length > 1 && query['_id']) {
+            query = {
+                _id : query['_id']
+            }
+        }
+
         Object.keys(query).forEach(
             (q,i) => {
 
-                if (i < Object.keys(query).length - 1 && Object.keys(query).length > 1) {
+                if (i < (Object.keys(query).length - 1) && Object.keys(query).length > 1) {
                     if (_op) {
                         this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]','( [first] AND [next] )');
                     } else {
@@ -256,12 +271,12 @@ export class FilterExpression {
                 }
 
                 if (i < Object.keys(query).length) {
-                     this.KeyConditionExpression = this.KeyConditionExpression.replace('[next]', '[first]');
+                    this.KeyConditionExpression = this.KeyConditionExpression.replace('[next]', '[first]');
                 }
 
                 switch(q) {
                     case '$nor':
-                        throw "Operator not supported";
+                        throw new Parse.Error(Parse.Error.INVALID_QUERY, "Operator not supported");
                     case '$or':
                     case '$and':
                         query[q].forEach(
@@ -290,7 +305,7 @@ export class FilterExpression {
                     case '$in':
                     case '$nin':
                         let list = query[q] || [];
-                        if (list.length === 0) throw "$in cannot be empty";
+                        if (list.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, "$in cannot be empty");
                         if (list.length === 1) {
                             query[key] = query[q][0];
                             delete query[q];
@@ -302,9 +317,15 @@ export class FilterExpression {
                         }
                         break;
                     case '$regex':
-                        _cmp_ = query[q].startsWith('^') ? 'begins_with' : 'contains';
-                        exp = this.createExp(key, query[q], _cmp_, not);
-                        this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
+                        _cmp_ = query[q].startsWith('^') ? 'begins_with' : null;
+                        if (_cmp_) {
+                            query[q] = query[q].replace('^\\Q', '');
+                            query[q] = query[q].replace('\\E', '');
+                            exp = this.createExp(key, query[q], _cmp_, not);
+                            this.KeyConditionExpression = this.KeyConditionExpression.replace('[first]', exp);
+                        } else {
+                            throw new Parse.Error(Parse.Error.INVALID_QUERY, "Cannot apply 'contains' on 'objectId'");
+                        }
                         break;
                     case '$exists':
                         _cmp_ = query[q] ? 'attribute_exists' : 'attribute_not_exists';
@@ -373,6 +394,24 @@ export class Partition {
         return QueryFilter;
     }
 
+    _getProjectionExpression(keys : string[], _params) {
+        if (!_params.ExpressionAttributeNames) {
+            _params.ExpressionAttributeNames = {};
+        }
+        let attributes = Object.keys(_params.ExpressionAttributeNames);
+        keys = keys.map(
+            key => {
+                let _key = '#' + key.replace(/^(_|\$)+/, '');
+                if (!(_key in attributes)) {
+                    _params.ExpressionAttributeNames[_key] = key;
+                }
+                return _key;
+            }
+        )
+
+        return keys.join(', ');
+    }
+
     _get(id : string, keys : string[] = []) : Promise {
         keys = keys || [];
         let params : DynamoDB.DocumentClient.GetItemInput = {
@@ -384,7 +423,7 @@ export class Partition {
         }
 
         if (keys.length > 0) {
-            params.AttributesToGet = keys;
+            params.ProjectionExpression = this._getProjectionExpression(keys, params);
         }
 
         return new Promise(
@@ -403,104 +442,124 @@ export class Partition {
         );
     }
 
-    _query(query: Object = {}, options : Options = {}, params : DynamoDB.DocumentClient.QueryInput = null, results = []) : Promise {
+    _query(query: Object = {}, options : Options = {}) : Promise {
         
         const between = (n, a, b) => {
             return (n - a) * (n - b) <= 0
         }
 
-        if (!params) {
-            let keys = Object.keys(options.keys || {});
-            let count = options.count ? true : false;
-
-            // maximum by DynamoDB is 100 or 1MB
-            let limit = between(options.limit, 1, 100) ? options.limit : 100;
-
-            // DynamoDB sorts only by sort key (in our case the objectId
-            options.sort = options.sort || {};
-            let descending = false;
-            if (options.sort.hasOwnProperty('_id') && options.sort['_id'] == -1) {
-                descending = true;
-            }
-
-            // Select keys -> projection
-            let select =  keys.length > 0 ? "SPECIFIC_ATTRIBUTES" : "ALL_ATTRIBUTES";
-            if (count) {
-                select = "COUNT"
-            }
-            
-            let _params : DynamoDB.DocumentClient.QueryInput = {
-                TableName : this.database,
-                KeyConditions: {
-                    _pk_className : this.createCondition('$eq', this.className)
-                },
-                Limit : limit,
-                Select : select
-            }
-
-            if (keys.length > 0) {
-                _params.AttributesToGet = keys;
-            }
-
-            if (Object.keys(query).length > 0) {
-                //_params.QueryFilter = this.getDynamoQueryFilter(query);
-                let exp : FilterExpression = new FilterExpression();
-                exp = exp.build(query);
-                _params.FilterExpression = exp.FilterExpression;
-                _params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
-                _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
-
-                exp = exp.buildKC(query);
-                console.log('KC ->', query, exp.KeyConditionExpression);
-                if (!exp.KeyConditionExpression.startsWith('[first]')) {
-                    _params.KeyConditionExpression = '( ( #className = :className ) AND [next] )';
-                    _params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
-                    _params.ExpressionAttributeNames['#className'] = '_pk_className';
-                    _params.ExpressionAttributeValues[':className'] = this.className;
-                    delete _params.KeyConditions;
-                }
-            }
-
-            if (descending) {
-                _params.ScanIndexForward = descending;
-            }
-
-            params = _params;
-        }
-
         return new Promise(
             (resolve, reject) => {
-                this.dynamo.query(params, (err, data) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        results = results.concat(data.Items || []);
-                        if (data.LastEvaluatedKey && (results.length < options.limit)) {
-                            options.limit = options.limit - results.length;
-                            params.ExclusiveStartKey = data.LastEvaluatedKey;
-                            return this._query(query, options, params, results);
+
+                const _exec = (query: Object = {}, options : Options = {}, params : DynamoDB.DocumentClient.QueryInput = null, results = []) => {
+             
+                    if (!params) {
+                        let keys = Object.keys(options.keys || {});
+                        let count = options.count ? true : false;
+
+                        // maximum by DynamoDB is 100 or 1MB
+                        let limit;
+                        if (!count) {
+                            limit = options.limit ? options.limit : 100;
                         }
 
-                        if (options.count) {
-                            resolve(data.Count ? data.Count : 0);
+                        // DynamoDB sorts only by sort key (in our case the objectId
+                        options.sort = options.sort || {};
+                        let descending = false;
+                        if (options.sort.hasOwnProperty('_id') && options.sort['_id'] == -1) {
+                            descending = true;
                         }
 
-                        results.forEach((item) => {
-                            delete item._pk_className;
-                        });
-                        resolve(results);
+                        // Select keys -> projection
+                        let select =  keys.length > 0 ? "SPECIFIC_ATTRIBUTES" : "ALL_ATTRIBUTES";
+                        if (count) {
+                            select = "COUNT"
+                        }
+                        
+                        let _params : DynamoDB.DocumentClient.QueryInput = {
+                            TableName : this.database,
+                            KeyConditions: {
+                                _pk_className : this.createCondition('$eq', this.className)
+                            },
+                            Select : select
+                        }
+
+                        if (!count) {
+                            _params.Limit = limit;
+                        }
+
+                        if (Object.keys(query).length > 0) {
+                        
+                            let exp : FilterExpression = new FilterExpression();
+                            let _query1 = JSON.parse(JSON.stringify(query));
+                            let _query2 = JSON.parse(JSON.stringify(query));
+                            exp = exp.build(_query1);
+                            _params.FilterExpression = exp.FilterExpression;
+                            _params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+                            _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+
+                            exp = exp.buildKC(_query2);
+                            if (!exp.KeyConditionExpression.startsWith('[first]')) {
+                                _params.KeyConditionExpression = '#className = :className AND ( [next] )';
+                                _params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
+                                _params.ExpressionAttributeNames['#className'] = '_pk_className';
+                                _params.ExpressionAttributeValues[':className'] = this.className;
+                                delete _params.KeyConditions;
+                            }
+                        }
+
+                        if (descending) {
+                            _params.ScanIndexForward = descending;
+                        }
+
+                        if (keys.length > 0) {
+                            _params.ProjectionExpression = this._getProjectionExpression(keys, _params);
+                        }
+
+                        params = _params;
                     }
-                });
+
+                    this.dynamo.query(params, (err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            results = results.concat(data.Items || []);
+                            if (data.LastEvaluatedKey && (results.length < options.limit)) {
+                                options.limit = options.limit - results.length;
+                                params.ExclusiveStartKey = data.LastEvaluatedKey;
+                                return _exec(query, options, params, results);
+                            }
+
+                            if (options.count) {
+                                resolve(data.Count ? data.Count : 0);
+                            }
+
+                            results.forEach((item) => {
+                                delete item._pk_className;
+                            });
+
+                            resolve(results);
+                        }
+                    });
+                }
+
+                _exec(query, options);
             }
+
         )
     }
 
     find(query: Object = {}, options : Options = {}) : Promise {
         if (query.hasOwnProperty('_id') && typeof query['_id'] === 'string') {
             let id = query['_id'];
-            let keys = Object.keys(options.keys || {});
+            let _keys = options.keys || {};
+            //delete _keys['_id'];
+            let keys = Object.keys(_keys);
             return this._get(id, keys);
         } else {
+            //if (options.keys && options.keys['_id']) {
+            //    delete options.keys['_id'];
+            //}
             return this._query(query, options);
         }
     }

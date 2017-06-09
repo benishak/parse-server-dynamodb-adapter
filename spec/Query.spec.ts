@@ -217,10 +217,50 @@ const __ops2 = ['$exists'];
         );
     }
 
+    @test 'DynamoDB KeyConditionrExpression : should ignore other keys in query'() {
+        let exp = new Query();
+        exp.buildKC({
+            _id : {
+                $gt : 1000,
+                $lt : 2000,
+                $ne : 5000
+            },
+            name : 'alfred'
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(3);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
+        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
+        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(1000);
+        expect(exp.ExpressionAttributeValues[':id_1']).to.be.equal(2000);
+        expect(exp.ExpressionAttributeValues[':id_2']).to.be.equal(5000);
+        expect((exp.KeyConditionExpression.match(/AND/g) || []).length).to.be.equal(2);
+        expect(exp.KeyConditionExpression).to.be.equal(
+            '#id > :id_0 AND #id < :id_1 AND #id <> :id_2'
+        );
+    }
+
     @test 'DynamoDB FilterExpression : simple query with single key'() {
         let exp = new Query();
         exp.build({ 
             "string" : "abc"
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#string');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':string_0');
+        expect(exp.ExpressionAttributeNames['#string']).to.be.equal('string');
+        expect(exp.ExpressionAttributeValues[':string_0']).to.be.equal('abc');
+        expect(exp.FilterExpression).to.be.equal('#string = :string_0');
+    }
+
+    @test 'DynamoDB FilterExpression : should ignore _id in query'() {
+        let exp = new Query();
+        exp.build({ 
+            "string" : "abc",
+            _id : 123
         });
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);

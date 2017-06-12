@@ -6,6 +6,14 @@ import { SchemaPartition, mongoSchemaToParseSchema, parseFieldTypeToMongoFieldTy
 import { Parse } from 'parse/node';
 import { _ } from 'lodash';
 
+type Options = {
+    skip? : Object, // not supported
+    limit? : number,
+    sort? : Object, // only supported on partition/sort key
+    keys? : Object
+    count?: boolean
+}
+
 const schemaTable = '_SCHEMA';
 
 // not used at the moment but can be helpful in the future!
@@ -94,7 +102,6 @@ export class Adapter {
     classExists(name : string) : Promise {
         return this._schemaCollection().find({ _id : name }).then(
             partition => {
-                console.log('partition ***', partition);
                 return partition.length > 0;
             }
         )
@@ -254,7 +261,8 @@ export class Adapter {
         return this.findOneAndUpdate(className, schema, query, update);
     }
 
-    find(className, schema, query, { skip, limit, sort, keys }) {
+    find(className, schema = {}, query = {}, options : Options = {}) {
+        let { skip, limit, sort, keys } = options;
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         query = Transform.transformWhere(className, query, schema);
         sort = _.mapKeys(sort, (value, fieldName) => Transform.transformKey(className, fieldName, schema));
@@ -272,6 +280,10 @@ export class Adapter {
                     Promise.reject(error);
                 }
             );
+    }
+
+    _rawFind(className, query = {}) {
+        return this._adaptiveCollection(className).find(query);
     }
 
     ensureUniqueness(className, schema, fieldNames) {

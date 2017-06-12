@@ -587,12 +587,13 @@ export class Partition {
 
     updateOne(query = {}, object : Object) : Promise {
         let id = query['_id'] || object['_id'];
+        
         let params : DynamoDB.DocumentClient.UpdateItemInput = {
             TableName : this.database,
             Key: {
                 _pk_className : this.className
             },
-            ReturnValues : 'UPDATED_NEW'
+            ReturnValues : 'ALL_NEW'
         }
 
         if (id) {
@@ -604,6 +605,8 @@ export class Partition {
                 params.ConditionExpression = exp.FilterExpression;
                 params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
                 params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+            } else {
+                throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : you must specify query keys');
             }
         }
 
@@ -649,6 +652,9 @@ export class Partition {
                     if (err) {
                         reject(err);
                     } else {
+                        if (data && data.Attributes) {
+                            delete data.Attributes._pk_className;
+                        }
                         resolve({
                             ok : 1,
                             n : 1,

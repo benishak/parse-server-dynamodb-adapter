@@ -114,7 +114,7 @@ export class SchemaPartition extends Partition {
         );
     }
 
-    _fechOneSchemaFrom_SCHEMA(name: string) {
+    _fechOneSchemaFrom_SCHEMA(name: string) : Promise {
         let query = _mongoSchemaQueryFromNameQuery(name);
         
         return this.find(query, { limit: 1 }).then(
@@ -128,7 +128,7 @@ export class SchemaPartition extends Partition {
         );
     }
 
-    findAndDeleteSchema(name : string) {
+    findAndDeleteSchema(name : string) : Promise {
         return this.deleteOne({ _id : name });
     }
 
@@ -137,17 +137,17 @@ export class SchemaPartition extends Partition {
         this.updateOne(_query, update);
     }
 
-    upsertSchema(name: string, query: Object, update: Object) {
+    upsertSchema(name: string, query: Object, update: Object) : Promise {
         return this.updateSchema(name, query, update);
     }
 
-    addFieldIfNotExists(className: string, fieldName: string, type: sType) {
+    addFieldIfNotExists(className: string, fieldName: string, type: sType) : Promise {
         let query = _mongoSchemaQueryFromNameQuery(className);
 
         return this.upsertOne(query, {
             [fieldName] : parseFieldTypeToMongoFieldType(type)
         }).catch(
             error => { throw error }
-        )
+        );
     }
 }

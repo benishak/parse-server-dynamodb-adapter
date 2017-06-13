@@ -60,8 +60,8 @@ const $ = DDB.getAdapter();
 @suite class DDBSOps {
 
     @test 'stores objectId in _id'(done) {
-        $.createObject('Foo', { fields: {} }, { objectId: 'abcde' })
-            .then(() => $._rawFind('Foo'))
+        $.createObject('FooX', { fields: {} }, { objectId: 'abcde' })
+            .then(() => $._rawFind('FooX'))
             .then(results => {
                 expect(results.length).to.be.equal(1);
                 var obj = results[0];
@@ -111,6 +111,7 @@ const $ = DDB.getAdapter();
         $.createObject(className, schema, obj)
         .then(() => $._rawFind(className))
         .then(results => {
+            console.log('res', results);
             expect(results.length).to.be.equal(1);
             const mob = results[0];
             expect(typeof mob.subdoc).to.be.equal('object');
@@ -194,7 +195,7 @@ const $ = DDB.getAdapter();
         });
     }
 
-    @test 'handles updating a single object with array, object date'(done) {
+    @test 'handles updating a single object with array, object, date'(done) {
         const adapter = $;
         const objectId = randomString(10);
         const className = randomString(7);
@@ -227,8 +228,8 @@ const $ = DDB.getAdapter();
             const mob = results;
             expect(mob.array instanceof Array).to.be.equal(true);
             expect(typeof mob.object).to.be.equal('object');
-            expect(mob.date.__type).to.be.equal('Date');
-            expect(mob.date.iso).to.be.equal('2016-05-26T20:55:01.154Z');
+            expect(typeof mob.date).to.be.equal('string');
+            expect(mob.date).to.be.equal('2016-05-26T20:55:01.154Z');
             return adapter._rawFind(className);
         })
         .then(results => {
@@ -236,9 +237,8 @@ const $ = DDB.getAdapter();
             const mob = results[0];
             expect(mob.array instanceof Array).to.be.equal(true);
             expect(typeof mob.object).to.be.equal('object');
-            expect(typeof mob.date).to.be.equal('object');
-            expect(mob.date.__type).to.be.equal('Date');
-            expect(mob.date.iso).to.be.equal('2016-05-26T20:55:01.154Z');
+            expect(typeof mob.date).to.be.equal('string');
+            expect(mob.date).to.be.equal('2016-05-26T20:55:01.154Z');
             done();
         })
         .catch(error => {

@@ -5,6 +5,8 @@
 import { DynamoDB } from 'aws-sdk';
 import * as Promise from 'bluebird';
 import { Parse } from 'parse/node';
+import { newObjectId } from 'parse-server/lib/cryptoUtils';
+import { generate as genRandomString } from 'randomstring';
 var u = require('util'); // for debugging;
 
 type Options = {
@@ -70,26 +72,63 @@ export class FilterExpression {
         return $;
     }
 
-    createExp(key, value, op, not = false) {
+    createExp(key, value, op, not = false) : string {
         
         if (!op) {
             throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Operation is not supported');
         }
 
+
         let _key = key.replace(/^(_|\$)+/, '');
 
         let exp : string;
+        let index = 0;
+        let _vl;
+        let _kk;
 
-        this.ExpressionAttributeNames['#' + _key] = key;
-        let index = Object.keys(this.ExpressionAttributeValues).filter(
-            e => {
-                if (e.indexOf(':' + _key) === 0) {
-                    return e;
+        let keys = key.split('.');
+
+        if (keys.length == 1) {
+            _key = _key.toLowerCase();
+            let _k = _key.replace(/\[[0-9]+\]/g, '');
+            this.ExpressionAttributeNames['#' + _k] = keys[0].replace(/\[[0-9]+\]/g, '');
+            let index = Object.keys(this.ExpressionAttributeValues).filter(
+                e => {
+                    if (e.indexOf(':' + _k) === 0) {
+                        return e;
+                    }
                 }
-            }
-        ).length;
+            ).length;
+            _vl = ':' + _k + '_' + index;
+            this.ExpressionAttributeValues[_vl] = value;
+            _kk = _key;
 
-        this.ExpressionAttributeValues[':' + _key + '_' + index] = value;
+        } else {
+            let attributes = Object.keys(this.ExpressionAttributeNames);
+            for (let i=0; i < keys.length; i++) {
+                let _key = keys[i].replace(/^(_|\$)+/, '');
+                _key = _key.toLowerCase();
+                let _k = _key.replace(/\[[0-9]+\]/g, '');
+                if (!(_key in attributes)) {
+                    this.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
+                    if (i == (keys.length - 1)) {
+                        let index = Object.keys(this.ExpressionAttributeValues).filter(
+                            e => {
+                                if (e.indexOf(':' + _k) === 0) {
+                                    return e;
+                                }
+                            }
+                        ).length;
+                        _vl = ':' + _k + '_' + index;
+                        this.ExpressionAttributeValues[_vl] = value;
+                    }
+                }
+                keys[i] = keys[i].replace(keys[i], '#' + _key);
+                _kk = _k;
+            }
+            
+            _kk = keys.join('.').replace('#','');
+        }
 
         switch (op) {
             case 'begins_with':
@@ -97,20 +136,20 @@ export class FilterExpression {
                 break;
             case 'attribute_exists':
                 exp = 'attribute_exists([key])';
-                delete this.ExpressionAttributeValues[':' + _key + '_' + index];
+                delete this.ExpressionAttributeValues[_vl];
                 break;
             case 'attribute_not_exists':
                 exp = 'attribute_not_exists([key])';
-                delete this.ExpressionAttributeValues[':' + _key + '_' + index];
+                delete this.ExpressionAttributeValues[_vl];
                 break;
             case 'contains':
                 exp = 'contains([key], [value])';   
                 break;
             case 'IN':
-                let _v = this.ExpressionAttributeValues[':' + _key + '_' + index];
+                let _v = this.ExpressionAttributeValues[_vl];
                 if (_v.indexOf(null) > -1 || _v.indexOf(undefined) > -1) {
                     if (_v.length == 2) {
-                        let _k = ':' + _key + '_' + index;
+                        let _k = ':' + _kk + '_' + index;
                         this.ExpressionAttributeValues[_k] = _v.sort()[0];
                         exp = '( [key] = [value] OR attribute_not_exists([key]) )';
                     } else {
@@ -118,8 +157,9 @@ export class FilterExpression {
                         _v = _v.filter(e => e != null);
                         _v.forEach(
                             (e,i) => {
-                                let _k = ':' + _key + '_' + index + '_' + i;
+                                let _k = ':' + _kk + '_' + index + '_' + i;
                                 this.ExpressionAttributeValues[_k] = e;
+                                delete this.ExpressionAttributeValues[_vl];
                                 _vs.push(_k);
                             }
                         )
@@ -130,8 +170,9 @@ export class FilterExpression {
                     _v = _v.filter(e => e != null);
                     _v.forEach(
                         (e,i) => {
-                            let _k = ':' + _key + '_' + index + '_' + i;
+                            let _k = ':' + _kk + '_' + index + '_' + i;
                             this.ExpressionAttributeValues[_k] = e;
+                            delete this.ExpressionAttributeValues[_vl];
                             _vs.push(_k);
                         }
                     )
@@ -143,8 +184,8 @@ export class FilterExpression {
                 break;
         }
 
-        exp = exp.replace(/\[key\]/g, '#' + _key);
-        exp = exp.replace(/\[value\]/g, ':' + _key + '_' + index);
+        exp = exp.replace(/\[key\]/g, '#' + _kk);
+        exp = exp.replace(/\[value\]/g, _vl);
         exp = exp.replace(/\[op\]/g, op);
 
         if (not) {
@@ -159,9 +200,9 @@ export class FilterExpression {
         Object.keys(query).forEach(
             (q,i) => {
 
-                if (query['_id']) {
-                    delete query['_id'];
-                }
+                // if (query['_id']) {
+                //     delete query['_id'];
+                // }
 
                 if (i < Object.keys(query).length - 1 && Object.keys(query).length > 1) {
                     if (_op) {
@@ -206,7 +247,7 @@ export class FilterExpression {
                     case '$in':
                     case '$nin':
                         let list = query[q] || [];
-                        if (list.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [$in] cannot be empty');
+                        if (list.length === 0) list = ['*']; //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [$in] cannot be empty');
                         if (list.length === 1) {
                             query[key] = query[q][0];
                             delete query[q];
@@ -233,13 +274,15 @@ export class FilterExpression {
                     case '$not':
                         this.build(query[q], key, true, _op);
                         break;
-                    case '_id':
-                        break;
                     default:
-                        if (query[q].constructor === Object && this.isQuery(query[q])) {
+                        if (query[q] && query[q].constructor === Object && this.isQuery(query[q])) {
                             this.build(query[q], q, not, _op);
                         } else {
-                            exp = this.createExp(q, query[q], '=', not);
+                            if (query[q] == undefined) {
+                                exp = this.createExp(q, query[q], 'attribute_not_exists', not);
+                            } else {
+                                exp = this.createExp(q, query[q], '=', not);
+                            }
                             this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         }
                         break;
@@ -333,6 +376,10 @@ export class FilterExpression {
 
         return this;
     }
+
+    buildUpdateExpression(query) {
+        
+    }
 }
 
 export class Partition {
@@ -376,22 +423,112 @@ export class Partition {
         return QueryFilter;
     }
 
-    _getProjectionExpression(keys : string[], _params) {
+    _getProjectionExpression(keys : string[], _params) : string {
+
         if (!_params.ExpressionAttributeNames) {
             _params.ExpressionAttributeNames = {};
         }
+        
         let attributes = Object.keys(_params.ExpressionAttributeNames);
         keys = keys.map(
             key => {
-                let _key = '#' + key.replace(/^(_|\$)+/, '');
-                if (!(_key in attributes)) {
-                    _params.ExpressionAttributeNames[_key] = key;
+                const keys = key.split('.');
+                for (let i=0; i < keys.length; i++) {
+                    let _key = '#' + keys[i].replace(/^(_|\$)+/, '');
+                    _key = _key.replace(/\[[0-9]+\]/, '');
+                    if (!(_key in attributes)) {
+                        _params.ExpressionAttributeNames[_key] = key;
+                    }
+                    keys[i] = _key;
                 }
-                return _key;
+                return keys.join('.');
             }
         )
 
         return keys.join(', ');
+    }
+
+    _getUpdateExpression(object : Object, _params) : string {
+
+        if (!_params.ExpressionAttributeNames) {
+            _params.ExpressionAttributeNames = {};
+        }
+
+        if (!_params.ExpressionAttributeValues) {
+            _params.ExpressionAttributeValues = {};
+        }
+
+        let $set = object || {}, $unset = [];
+        let _set = [], _unset = [];
+        let exp;
+
+        if (Object.keys(object).length > 0) {
+            if (object.hasOwnProperty('$set')) {
+                $set = object['$set'] || {};
+            }
+
+            if (object.hasOwnProperty('$unset')) {
+                $unset = object['$unset'] || {};
+            }
+
+            let attributes = Object.keys(_params.ExpressionAttributeNames);
+            //let lv = genRandomString(5);
+            Object.keys($set).forEach(key => {
+                if ($set[key] != undefined) {
+                    const lv = genRandomString(5);
+                    const keys = key.split('.');
+                    for (let i=0; i < keys.length; i++) {
+                        let _key = keys[i].replace(/^(_|\$)+/, '');
+                        _key = _key.toLowerCase();
+                        let _k = _key.replace(/\[[0-9]+\]/g, '');
+                        if (!(_key in attributes)) {
+                            _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
+                            if (i == (keys.length - 1)) {
+                                _params.ExpressionAttributeValues[':' + lv] = $set[key];
+                            }
+                        }
+                        keys[i] = keys[i].replace(keys[i], _key);
+                    }
+                    let exp = '[key] = [value]';
+                    exp = exp.replace('[key]',   '#' + keys.join('.'));
+                    exp = exp.replace('[value]', ':' + lv);
+                    _set.push(exp);
+                } else {
+                    if (!(key in $unset)) {
+                        _unset.push(key);
+                    }
+                }
+            });
+
+            _unset = _unset.concat(Object.keys($unset).map(
+                key => {
+                    const keys = key.split('.');
+                    for (let i=0; i < keys.length; i++) {
+                        let _key = '#' + keys[i].replace(/^(_|\$)+/, '');
+                        _key = _key.replace(/\[[0-9]+\]/g, '');
+                        if (!(_key in attributes)) {
+                            _params.ExpressionAttributeNames[_key] = keys[i].replace(/\[[0-9]+\]/g, '');
+                        }
+                        keys[i] = keys[i].replace(keys[i], _key);
+                    }
+                    return keys.join('.');
+                }
+            ));
+
+            if (_set.length > 0) {
+                exp = 'SET ' + _set.join(', ');
+            }
+
+            if (_unset.length) {
+                if (exp) {
+                    exp = exp + ' REMOVE ' + _unset.join(', ');
+                } else {
+                    exp = 'REMOVE ' + _unset.join(', ');
+                }
+            }
+        }
+        
+        return exp;
     }
 
     _get(id : string, keys : string[] = []) : Promise {
@@ -400,7 +537,7 @@ export class Partition {
             TableName : this.database,
             Key: {
                 _pk_className : this.className,
-                _id : id
+                _sk_id : id
             }
         }
 
@@ -416,8 +553,7 @@ export class Partition {
                     } else {
                         if (data.Item) {
                             delete data.Item._pk_className;
-                        }
-                        if (data.Item) {
+                            delete data.Item._sk_id;
                             resolve([data.Item]);
                         } else {
                             resolve([]);
@@ -464,10 +600,14 @@ export class Partition {
                         
                         let _params : DynamoDB.DocumentClient.QueryInput = {
                             TableName : this.database,
-                            KeyConditions: {
-                                _pk_className : this.createCondition('$eq', this.className)
+                            KeyConditionExpression : '#className = :className',
+                            Select : select,
+                            ExpressionAttributeNames : {
+                                '#className' : '_pk_className'
                             },
-                            Select : select
+                            ExpressionAttributeValues : {
+                                ':className' : this.className
+                            }
                         }
 
                         if (!count) {
@@ -478,20 +618,21 @@ export class Partition {
                         
                             let exp : FilterExpression = new FilterExpression();
                             let _query1 = JSON.parse(JSON.stringify(query));
-                            let _query2 = JSON.parse(JSON.stringify(query));
+                            //let _query2 = JSON.parse(JSON.stringify(query));
                             exp = exp.build(_query1);
                             _params.FilterExpression = exp.FilterExpression;
                             _params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
                             _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+                            _params.ExpressionAttributeNames['#className'] = '_pk_className';
+                            _params.ExpressionAttributeValues[':className'] = this.className;
 
-                            exp = exp.buildKC(_query2);
-                            if (!exp.KeyConditionExpression.startsWith('[first]')) {
-                                _params.KeyConditionExpression = '#className = :className AND ( [next] )';
-                                _params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
-                                _params.ExpressionAttributeNames['#className'] = '_pk_className';
-                                _params.ExpressionAttributeValues[':className'] = this.className;
-                                delete _params.KeyConditions;
-                            }
+                            // exp = exp.buildKC(_query2);
+                            //if (!exp.KeyConditionExpression.startsWith('[first]')) {
+                            //_params.KeyConditionExpression = '#className = :className';
+                            //_params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
+                            
+                            //delete _params.KeyConditions;
+                            // }
                         }
 
                         if (descending) {
@@ -522,6 +663,7 @@ export class Partition {
 
                             results.forEach((item) => {
                                 delete item._pk_className;
+                                delete item._sk_id;
                             });
 
                             resolve(results);
@@ -531,7 +673,6 @@ export class Partition {
 
                 _exec(query, options);
             }
-
         )
     }
 
@@ -542,12 +683,13 @@ export class Partition {
             //delete _keys['_id'];
             let keys = Object.keys(_keys);
             return this._get(id, keys);
-        } else {
-            //if (options.keys && options.keys['_id']) {
-            //    delete options.keys['_id'];
-            //}
-            return this._query(query, options);
         }
+
+        if (options.keys && options.keys['_id']) {
+            delete options.keys['_id'];
+        }
+
+        return this._query(query, options);
     }
 
     count(query: Object = {}, options : Options = {}) : Promise {
@@ -556,13 +698,13 @@ export class Partition {
     }
 
     insertOne(object) : Promise {
-        let id = object['_id'];
-        delete object['_id'];
+        let id = object['_id'] || newObjectId();
+
         let params : DynamoDB.DocumentClient.PutItemInput = {
             TableName : this.database,
             Item: {
                 _pk_className : this.className,
-                _id : id,
+                _sk_id : id,
                 ...object
             }
         }
@@ -596,72 +738,51 @@ export class Partition {
             ReturnValues : 'ALL_NEW'
         }
 
+        let find = Promise.resolve();
+
         if (id) {
-            params.Key._id = id;
+            find = Promise.resolve(id);
         } else {
             if (Object.keys(query).length > 0) {
-                let exp : FilterExpression = new FilterExpression();
-                exp = exp.build(query);
-                params.ConditionExpression = exp.FilterExpression;
-                params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
-                params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+                find = this.find(query, { limit : 1 }).then(
+                    results => {
+                        if (results.length > 0 && results[0]._id) {
+                            return results[0]._id;
+                        } else {
+                            // create new object if not exist
+                            return newObjectId();
+                        }
+                    }
+                )
             } else {
                 throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : you must specify query keys');
             }
         }
 
         delete object['_id'];
-        if (Object.keys(object).length > 0) {
-            let $set = object, $unset = [];
-            if (object.hasOwnProperty('$set')) {
-                $set = object['$set'] || {};
-            }
-
-            if (object.hasOwnProperty('$unset')) {
-                $unset = Object.keys((object['$unset'] || {}));
-            }
-
-            object = null; // destroy object;
-
-            params.AttributeUpdates = {};
-            for (let key in $set) {
-                let action = $set[key] === undefined ? 'DELETE' : 'PUT';
-                if ($set[key] instanceof Date) {
-                    $set[key] = $set[key].toISOString();
-                }
-
-                params.AttributeUpdates[key] = {
-                    Action : action
-                }
-
-                if (action == 'PUT') {
-                    params.AttributeUpdates[key].Value = $set[key];
-                }
-            }
-
-            $unset.forEach(key => {
-                params.AttributeUpdates[key] = {
-                    Action : 'DELETE'
-                }
-            });
-        }
+        params.UpdateExpression = this._getUpdateExpression(object, params);
+        object = null; // destroy object;
 
         return new Promise(
             (resolve, reject) => {
-                this.dynamo.update(params, (err, data) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        if (data && data.Attributes) {
-                            delete data.Attributes._pk_className;
+                find.then((id) => {
+                    params.Key._sk_id = id;
+                    this.dynamo.update(params, (err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            if (data && data.Attributes) {
+                                delete data.Attributes._pk_className;
+                                delete data.Attributes._sk_id;
+                            }
+                            resolve({
+                                ok : 1,
+                                n : 1,
+                                nModified : 1,
+                                value : data.Attributes
+                            });
                         }
-                        resolve({
-                            ok : 1,
-                            n : 1,
-                            nModified : 1,
-                            value : data.Attributes
-                        });
-                    }
+                    });
                 });
             }
         )
@@ -671,12 +792,13 @@ export class Partition {
         return this.updateOne(query, object);
     }
 
-    updateMany(query = {}, object) {
+    updateMany(query = {}, object) : Promise {
         let id = query['_id'] || object['_id'];
 
         if (id) {
             return this.updateOne(query, object);
-        } else {let options = {
+        } else {
+            let options = {
                 limit : 25,
                 keys : { _id : 1 }
             }
@@ -690,7 +812,9 @@ export class Partition {
                         return {
                             PutRequest : {
                                 Item : {
-                                    _id : item._id,
+                                    _pk_className : this.className,
+                                    _sk_id : item._sk_id,
+                                    _id : item._sk_id,
                                     ...object
                                 }
                             }
@@ -725,29 +849,44 @@ export class Partition {
             }
         }
 
+        let find = Promise.resolve();
+
         if (id) {
-            params.Key._id = id;
+            find = Promise.resolve(id);
         } else {
-            if (Object.keys(query).length > 0) { 
-                let exp = new FilterExpression();
-                exp = exp.build(query);
-                params.ConditionExpression = exp.FilterExpression;
-                params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
-                params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+            if (Object.keys(query).length > 0) {
+                find = this.find(query, { limit : 1 }).then(
+                    results => {
+                        if (results.length > 0 && results[0]._id) {
+                            return results[0]._id;
+                        } else {
+                            return -1;
+                        }
+                    }
+                )
+            } else {
+                throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : you must specify query keys');
             }
         }
 
         return new Promise(
             (resolve, reject) => {
-                this.dynamo.delete(params, (err, data) => {
-                    if (err) {
-                        reject(err);
+                find.then((id) => {
+                    if (id == -1) {
+                        reject();
                     } else {
-                        resolve({
-                            ok : 1 ,
-                            n : 1,
-                            deletedCount : 1
-                        })
+                        params.Key._sk_id = id;
+                        this.dynamo.delete(params, (err, data) => {
+                            if (err) {
+                                reject(err);
+                            } else {
+                                resolve({
+                                    ok : 1 ,
+                                    n : 1,
+                                    deletedCount : 1
+                                })
+                            }
+                        });
                     }
                 });
             }
@@ -773,7 +912,8 @@ export class Partition {
                         return {
                             DeleteRequest : {
                                 Key : {
-                                    _id : item._id
+                                    _pk_className : item.className,
+                                    _sk_id : item._id
                                 }
                             }
                         }
@@ -799,11 +939,11 @@ export class Partition {
         }
     }
 
-    _ensureSparseUniqueIndexInBackground(indexRequest) {
+    _ensureSparseUniqueIndexInBackground(indexRequest) : Promise {
         return Promise.resolve();
     }
 
-    drop () {
-        return Promise.reject();
+    drop () : Promise {
+        return Promise.resolve();
     }
 }

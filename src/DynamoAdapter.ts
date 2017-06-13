@@ -87,7 +87,7 @@ export class Adapter {
         this.service = new DynamoDB(this.settings);
     }
 
-    connect() {
+    connect() : Promise {
         return Promise.resolve();
     }
 
@@ -107,13 +107,13 @@ export class Adapter {
         )
     }
 
-    setClassLevelPermissions(className, CLPs) {
+    setClassLevelPermissions(className, CLPs) : Promise {
         return this._schemaCollection().updateSchema(className, {}, {
              _metadata: { class_permissions: CLPs }
         });
     }
 
-    createClass(className, schema) {
+    createClass(className, schema) : Promise {
         return this.classExists(className).then(
             partition => {
                 if (!partition) {
@@ -140,22 +140,24 @@ export class Adapter {
         )
     }
 
-    addFieldIfNotExists(className, fieldName, type) {
+    addFieldIfNotExists(className, fieldName, type) : Promise {
         return this._schemaCollection().addFieldIfNotExists(className, fieldName, type);
     }
 
-    deleteClass(className) {
+    deleteClass(className) : Promise {
         // only drop Schema!
         return this._schemaCollection().findAndDeleteSchema(className);
     }
 
-    deleteAllClasses() {
-        return Promise.reject({
-            error : "operation not supported by DynamoDB"
-        });
+    deleteAllClasses() : Promise {
+        // only for test
+        let _e = require('child_process');
+        const del = _e.execSync('aws dynamodb delete-table --table-name parse-server --endpoint http://localhost:8000');
+        const create = _e.execSync('aws dynamodb create-table --table-name parse-server --attribute-definitions AttributeName=_pk_className,AttributeType=S AttributeName=_sk_id,AttributeType=S --key-schema AttributeName=_pk_className,KeyType=HASH AttributeName=_sk_id,KeyType=RANGE --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 --endpoint-url http://localhost:8000')
+        return Promise.resolve();
     }
 
-    deleteFields(className, schema, fieldNames) {
+    deleteFields(className, schema, fieldNames) : Promise {
         // remove fields only from Schema
         let update = {};
         fieldNames.forEach(field => {
@@ -165,11 +167,11 @@ export class Adapter {
         return this._schemaCollection().updateSchema(name, { _id : name }, update);
     }
 
-    getAllClasses() {
+    getAllClasses() : Promise {
         return this._schemaCollection()._fetchAllSchemasFrom_SCHEMA();
     }
 
-    getClass(className) {
+    getClass(className) : Promise {
         return this._schemaCollection()._fechOneSchemaFrom_SCHEMA(className);
     }
 
@@ -200,10 +202,11 @@ export class Adapter {
         return object;
     }
 
-    createObject(className, schema, object) {
+    createObject(className, schema, object) : Promise {
         object = this.transformDateObject(object);
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         object = Transform.parseObjectToMongoObjectForCreate(className, object, schema);
+        object = object = this.transformDateObject(object);
         Object.keys(object).forEach(
             key => {
                 if (object[key] instanceof Date) {
@@ -220,9 +223,10 @@ export class Adapter {
             )
     }
 
-    deleteObjectsByQuery(className, schema, query) {
+    deleteObjectsByQuery(className, schema, query) : Promise {
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         query = Transform.transformWhere(className, query, schema);
+        query = this.transformDateObject(query);
 
         return this._adaptiveCollection(className).deleteMany(query)
             .then(
@@ -241,17 +245,23 @@ export class Adapter {
     }
 
     updateObjectsByQuery(className, schema, query, update) {
+        update = this.transformDateObject(update);
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         update = Transform.transformUpdate(className, update, schema);
+        update = this.transformDateObject(update);
         query = Transform.transformWhere(className, query, schema);
+        query = this.transformDateObject(query);
 
         return this._adaptiveCollection(className).updateMany(query, update);
     }
 
     findOneAndUpdate(className, schema, query, update) {
+        update = this.transformDateObject(update);
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         update = Transform.transformUpdate(className, update, schema);
+        update = this.transformDateObject(update);
         query = Transform.transformWhere(className, query, schema);
+        query = this.transformDateObject(query);
 
         return this._adaptiveCollection(className).updateOne(query, update)
             .then(result => Transform.mongoObjectToParseObject(className, result.value, schema));
@@ -265,6 +275,7 @@ export class Adapter {
         let { skip, limit, sort, keys } = options;
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         query = Transform.transformWhere(className, query, schema);
+        query = this.transformDateObject(query);
         sort = _.mapKeys(sort, (value, fieldName) => Transform.transformKey(className, fieldName, schema));
         keys = _.reduce(keys, (memo, key) => {
             memo[Transform.transformKey(className, key, schema)] = 1;

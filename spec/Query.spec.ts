@@ -14,6 +14,96 @@ const __ops2 = ['$exists'];
 
 @suite class DDBQuery {
 
+    @test 'can generate simple expression from key : foo'() {
+        let exp = new Query();
+        let text = exp.createExp('foo', 'bar', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foo_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
+        expect(exp.ExpressionAttributeValues[':foo_0']).to.be.equal('bar');
+        expect(text).to.be.equal('#foo = :foo_0');
+    }
+
+    @test 'can generate expression from nested key : foo.bar'() {
+        let exp = new Query();
+        let text = exp.createExp('foo.bar', 'foobar', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':bar_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
+        expect(exp.ExpressionAttributeNames['#bar']).to.be.equal('bar');
+        expect(exp.ExpressionAttributeValues[':bar_0']).to.be.equal('foobar');
+        expect(text).to.be.equal('#foo.#bar = :bar_0');
+    }
+
+    @test 'can generate expression from nested key : foo.bar.foobar'() {
+        let exp = new Query();
+        let text = exp.createExp('foo.bar.foobar', 'foobar', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foobar_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
+        expect(exp.ExpressionAttributeNames['#bar']).to.be.equal('bar');
+        expect(exp.ExpressionAttributeValues[':foobar_0']).to.be.equal('foobar');
+        expect(text).to.be.equal('#foo.#bar.#foobar = :foobar_0');
+    }
+
+    @test 'can generate expression from list element : foo[0]'() {
+        let exp = new Query();
+        let text = exp.createExp('foo[0]', 'bar', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foo_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
+        expect(exp.ExpressionAttributeValues[':foo_0']).to.be.equal('bar');
+        expect(text).to.be.equal('#foo[0] = :foo_0');
+    }
+
+    @test 'can generate expression from list element : foo[0][1]'() {
+        let exp = new Query();
+        let text = exp.createExp('foo[0][1]', 'bar', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foo_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
+        expect(exp.ExpressionAttributeValues[':foo_0']).to.be.equal('bar');
+        expect(text).to.be.equal('#foo[0][1] = :foo_0');
+    }
+
+    @test 'can generate expression of nested list element : foo.bar[0]'() {
+        let exp = new Query();
+        let text = exp.createExp('foo.bar[0]', 'foobar', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':bar_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
+        expect(exp.ExpressionAttributeNames['#bar']).to.be.equal('bar');
+        expect(exp.ExpressionAttributeValues[':bar_0']).to.be.equal('foobar');
+        expect(text).to.be.equal('#foo.#bar[0] = :bar_0');
+    }
+
+    @test 'can generate expression of nested list elements : foo[0].bar[0]'() {
+        let exp = new Query();
+        let text = exp.createExp('foo[0].bar[0]', 'foobar', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':bar_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
+        expect(exp.ExpressionAttributeNames['#bar']).to.be.equal('bar');
+        expect(exp.ExpressionAttributeValues[':bar_0']).to.be.equal('foobar');
+        expect(text).to.be.equal('#foo[0].#bar[0] = :bar_0');
+    }
+
+    @test 'can generate expression of mixed nested list elements : foo[0][1].bar[0].foobar[2]'() {
+        let exp = new Query();
+        let text = exp.createExp('_foo[0][1].__bar[0].foobar[2]', '123', '=');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
+        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
+        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foobar_0');
+        expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('_foo');
+        expect(exp.ExpressionAttributeNames['#bar']).to.be.equal('__bar');
+        expect(exp.ExpressionAttributeValues[':foobar_0']).to.be.equal('123');
+        expect(text).to.be.equal('#foo[0][1].#bar[0].#foobar[2] = :foobar_0');
+    }
+
     @test 'DynamoDB KeyConditionrExpression : should generate simple query of _id'() {
         let exp = new Query();
         exp.buildKC({
@@ -190,22 +280,6 @@ const __ops2 = ['$exists'];
         let exp = new Query();
         exp.build({ 
             "string" : "abc"
-        });
-
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
-        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#string');
-        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':string_0');
-        expect(exp.ExpressionAttributeNames['#string']).to.be.equal('string');
-        expect(exp.ExpressionAttributeValues[':string_0']).to.be.equal('abc');
-        expect(exp.FilterExpression).to.be.equal('#string = :string_0');
-    }
-
-    @test 'DynamoDB FilterExpression : should ignore _id in query'() {
-        let exp = new Query();
-        exp.build({ 
-            "string" : "abc",
-            _id : 123
         });
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
@@ -442,9 +516,30 @@ const __ops2 = ['$exists'];
         ]});
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(6);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(12);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(10);
         expect(exp.FilterExpression).to.be.equal(
             '#balance > :balance_0 AND #balance < :balance_1 OR #quantity <> :quantity_0 AND #quantity <> :quantity_1 AND #product IN (:product_0_0,:product_0_1) AND NOT ( #stat IN (:stat_0_0,:stat_0_1) ) AND #author = :author_0 AND ( #stars = :stars_0 OR attribute_not_exists(#stars) )'
         );
+    }
+
+    @test 'DynamoDB UpdateExpression : set one attribute'() {
+        let partition = new Partition('test', 'test', new DynamoDB());
+        let params = {};
+        let exp = partition._getUpdateExpression({
+            foo : 'bar'
+        }, params);
+        let vl = Object.keys(params['ExpressionAttributeValues'])[0];
+
+        expect(exp).to.be.equal('SET #foo = ' + vl);
+
+        params = {};
+        exp = partition._getUpdateExpression({
+            $set : {
+                foo : 'bar'
+            }
+        }, params)
+        vl = Object.keys(params['ExpressionAttributeValues'])[0];
+        
+        expect(exp).to.be.equal('SET #foo = ' + vl);
     }
 }

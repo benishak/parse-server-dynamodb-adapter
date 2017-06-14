@@ -122,7 +122,7 @@ export class SchemaPartition extends Partition {
                 if (result) {
                     return mongoSchemaToParseSchema(result);
                 } else {
-                    return undefined;
+                    return [];
                 }
             }
         );
@@ -132,9 +132,9 @@ export class SchemaPartition extends Partition {
         return this.deleteOne({ _id : name });
     }
 
-    updateSchema(name: string, query: Object, update: Object) {
+    updateSchema(name: string, query: Object, update: Object) : Promise {
         let _query = _mongoSchemaQueryFromNameQuery(name, query);
-        this.updateOne(_query, update);
+        return this.updateOne(_query, update);
     }
 
     upsertSchema(name: string, query: Object, update: Object) : Promise {

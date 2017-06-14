@@ -1,5 +1,5 @@
 /// <reference path="../node_modules/mocha-typescript/globals.d.ts" />
-import { suite, test, slow, timeout } from 'mocha-typescript';
+import { suite, context, test, slow, timeout } from 'mocha-typescript';
 import { should, expect, assert } from 'chai';
 import { DynamoDB as DAdapter } from '../src/';
 import { Partition  } from '../src/DynamoPartition';
@@ -59,9 +59,15 @@ const $ = DDB.getAdapter();
 
 @suite class DDBSOps {
 
+    @context mocha;
+
+    before() {
+        $.deleteAllClasses();
+    }
+
     @test 'stores objectId in _id'(done) {
-        $.createObject('FooX', { fields: {} }, { objectId: 'abcde' })
-            .then(() => $._rawFind('FooX'))
+        $.createObject('Foo', { fields: {} }, { objectId: 'abcde' })
+            .then(() => $._rawFind('Foo'))
             .then(results => {
                 expect(results.length).to.be.equal(1);
                 var obj = results[0];
@@ -111,7 +117,6 @@ const $ = DDB.getAdapter();
         $.createObject(className, schema, obj)
         .then(() => $._rawFind(className))
         .then(results => {
-            console.log('res', results);
             expect(results.length).to.be.equal(1);
             const mob = results[0];
             expect(typeof mob.subdoc).to.be.equal('object');

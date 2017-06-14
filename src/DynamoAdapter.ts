@@ -101,16 +101,18 @@ export class Adapter {
 
     classExists(name : string) : Promise {
         return this._schemaCollection().find({ _id : name }).then(
-            partition => {
-                return partition.length > 0;
-            }
-        )
+            partition => partition.length > 0
+        ).catch(
+            error => { throw error }
+        );
     }
 
     setClassLevelPermissions(className, CLPs) : Promise {
         return this._schemaCollection().updateSchema(className, {}, {
              _metadata: { class_permissions: CLPs }
-        });
+        }).catch(
+            error => { throw error }
+        );
     }
 
     createClass(className, schema) : Promise {
@@ -137,24 +139,38 @@ export class Adapter {
             }
         ).catch(
             error => { throw error }
-        )
+        );
     }
 
     addFieldIfNotExists(className, fieldName, type) : Promise {
-        return this._schemaCollection().addFieldIfNotExists(className, fieldName, type);
+        return this._schemaCollection().addFieldIfNotExists(className, fieldName, type)
+            .catch(
+                error => { throw error }
+            );
     }
 
     deleteClass(className) : Promise {
         // only drop Schema!
-        return this._schemaCollection().findAndDeleteSchema(className);
+        return this._schemaCollection().findAndDeleteSchema(className)
+            .catch(
+                error => { throw error }
+            );
     }
 
     deleteAllClasses() : Promise {
         // only for test
-        let _e = require('child_process');
-        const del = _e.execSync('aws dynamodb delete-table --table-name parse-server --endpoint http://localhost:8000');
-        const create = _e.execSync('aws dynamodb create-table --table-name parse-server --attribute-definitions AttributeName=_pk_className,AttributeType=S AttributeName=_sk_id,AttributeType=S --key-schema AttributeName=_pk_className,KeyType=HASH AttributeName=_sk_id,KeyType=RANGE --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 --endpoint-url http://localhost:8000')
-        return Promise.resolve();
+        let exec = require('child_process').execSync;
+        return this.service.describeTable({ TableName : this.database })
+            .promise()
+                .catch(() => {
+                    return exec('aws dynamodb delete-table --table-name parse-server --endpoint http://localhost:8000');
+                })
+                .catch(() => {
+                    return exec('aws dynamodb create-table --table-name parse-server --attribute-definitions AttributeName=_pk_className,AttributeType=S AttributeName=_sk_id,AttributeType=S --key-schema AttributeName=_pk_className,KeyType=HASH AttributeName=_sk_id,KeyType=RANGE --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 --endpoint-url http://localhost:8000');
+                })
+                .catch(() => {
+                    return Promise.resolve();
+                });
     }
 
     deleteFields(className, schema, fieldNames) : Promise {
@@ -164,7 +180,10 @@ export class Adapter {
             update[field] = undefined;
         });
         
-        return this._schemaCollection().updateSchema(name, { _id : name }, update);
+        return this._schemaCollection().updateSchema(name, { _id : name }, update)
+            .catch(
+                error => { throw error }
+            );
     }
 
     getAllClasses() : Promise {
@@ -172,7 +191,10 @@ export class Adapter {
     }
 
     getClass(className) : Promise {
-        return this._schemaCollection()._fechOneSchemaFrom_SCHEMA(className);
+        return this._schemaCollection()._fechOneSchemaFrom_SCHEMA(className)
+            .catch(
+                error => { throw error }
+            );
     }
 
     transformDateObject(object = {}) : Object {
@@ -217,10 +239,8 @@ export class Adapter {
 
         return this._adaptiveCollection(className).insertOne(object)
             .catch(
-                (error) => {
-                    throw error;
-                }
-            )
+                error => { throw error }
+            );
     }
 
     deleteObjectsByQuery(className, schema, query) : Promise {
@@ -238,10 +258,8 @@ export class Adapter {
                 }
             )
             .catch(
-                error => {
-                    throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB adapter error');
-                }
-            )
+                error => { throw error }
+            );
     }
 
     updateObjectsByQuery(className, schema, query, update) {
@@ -252,7 +270,10 @@ export class Adapter {
         query = Transform.transformWhere(className, query, schema);
         query = this.transformDateObject(query);
 
-        return this._adaptiveCollection(className).updateMany(query, update);
+        return this._adaptiveCollection(className).updateMany(query, update)
+            .catch(
+                error => { throw error }
+            );
     }
 
     findOneAndUpdate(className, schema, query, update) {
@@ -264,7 +285,10 @@ export class Adapter {
         query = this.transformDateObject(query);
 
         return this._adaptiveCollection(className).updateOne(query, update)
-            .then(result => Transform.mongoObjectToParseObject(className, result.value, schema));
+            .then(result => Transform.mongoObjectToParseObject(className, result.value, schema))
+            .catch(
+                error => { throw error }
+            );
     }
 
     upsertOneObject(className, schema, query, update) {
@@ -287,14 +311,15 @@ export class Adapter {
                 objects => objects.map(object => Transform.mongoObjectToParseObject(className, object, schema))
             )
             .catch(
-                (error) => {
-                    Promise.reject(error);
-                }
+                error => { throw error }
             );
     }
 
     _rawFind(className, query = {}) {
-        return this._adaptiveCollection(className).find(query);
+        return this._adaptiveCollection(className).find(query)
+            .catch(
+                error => { throw error }
+            );
     }
 
     ensureUniqueness(className, schema, fieldNames) {
@@ -303,7 +328,11 @@ export class Adapter {
 
     count(className, schema, query) {
         schema = Transform.convertParseSchemaToMongoSchema(schema);
-        return this._adaptiveCollection(className).count(Transform.transformWhere(className, query, schema));
+
+        return this._adaptiveCollection(className).count(Transform.transformWhere(className, query, schema))
+            .catch(
+                error => { throw error }
+            );
     }
 
     performInitialization() {

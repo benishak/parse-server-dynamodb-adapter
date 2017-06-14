@@ -728,6 +728,7 @@ export class Partition {
     }
 
     updateOne(query = {}, object : Object) : Promise {
+        console.log('UPDATE', query, object);
         let id = query['_id'] || object['_id'];
         
         let params : DynamoDB.DocumentClient.UpdateItemInput = {

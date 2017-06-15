@@ -142,12 +142,10 @@ export class SchemaPartition extends Partition {
     }
 
     addFieldIfNotExists(className: string, fieldName: string, type: sType) : Promise {
-        let query = _mongoSchemaQueryFromNameQuery(className);
-
-        return this.upsertOne(query, {
-            [fieldName] : parseFieldTypeToMongoFieldType(type)
-        }).catch(
-            error => { throw error }
-        );
+        return this.upsertSchema(
+            className,
+            { [fieldName]: { '$exists': false } },
+            { '$set' : { [fieldName]: parseFieldTypeToMongoFieldType(type) } }
+        );  
     }
 }

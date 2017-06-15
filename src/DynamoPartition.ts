@@ -29,6 +29,25 @@ const DynamoComperator = {
     '$regex' : 'BEGINS_WITH',
 }
 
+// Object.values ES7
+class $ extends Object {
+    static values (obj : Object) {
+        return Object.keys(obj).map(e => obj[e]);
+    }
+
+    static count (obj : Object, s : string) {
+        return Object.keys(obj).filter(e => { if (e.indexOf(s) === 0) return e }).length;
+    }
+
+    static getKey(obj : Object, v : any) {
+        for (let k in obj) {
+            if (obj[k] === v) return k;
+        }
+
+        return null;
+    }
+}
+
 // helper class to generate DynamoDB FilterExpression from MongoDB Query Object
 export class FilterExpression {
 
@@ -51,6 +70,7 @@ export class FilterExpression {
         '$exists' : '*',
         '$regex' : '*',
         '$nin' : '*',
+        '$all' : '*'
     }
 
     __not = {
@@ -72,7 +92,7 @@ export class FilterExpression {
         return $;
     }
 
-    createExp(key, value, op, not = false) : string {
+    createExp(key, value, op, not = false, _all = false) : string {
         
         if (!op) {
             throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Operation is not supported');
@@ -83,52 +103,37 @@ export class FilterExpression {
 
         let exp : string;
         let index = 0;
-        let _vl;
+        let _vl; //genRandomString(4);
         let _kk;
 
         let keys = key.split('.');
 
-        if (keys.length == 1) {
+        let attributes = Object.keys(this.ExpressionAttributeNames);
+        for (let i=0; i < keys.length; i++) {
+            let _key = keys[i].replace(/^(_|\$)+/, '');
             _key = _key.toLowerCase();
             let _k = _key.replace(/\[[0-9]+\]/g, '');
-            this.ExpressionAttributeNames['#' + _k] = keys[0].replace(/\[[0-9]+\]/g, '');
-            let index = Object.keys(this.ExpressionAttributeValues).filter(
-                e => {
-                    if (e.indexOf(':' + _k) === 0) {
-                        return e;
+            if (attributes.indexOf(_key) == -1) {
+                // we must make sure we don't re-reference key again 
+                // because it causes ValidationException in DynamoDB
+                if ($.getKey(this.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                    let index = $.count(this.ExpressionAttributeNames, '#' + _k);
+                    if (index > 0) {
+                        _k = _k + '_' + index;
                     }
-                }
-            ).length;
-            _vl = ':' + _k + '_' + index;
-            this.ExpressionAttributeValues[_vl] = value;
-            _kk = _key;
-
-        } else {
-            let attributes = Object.keys(this.ExpressionAttributeNames);
-            for (let i=0; i < keys.length; i++) {
-                let _key = keys[i].replace(/^(_|\$)+/, '');
-                _key = _key.toLowerCase();
-                let _k = _key.replace(/\[[0-9]+\]/g, '');
-                if (!(_key in attributes)) {
                     this.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
-                    if (i == (keys.length - 1)) {
-                        let index = Object.keys(this.ExpressionAttributeValues).filter(
-                            e => {
-                                if (e.indexOf(':' + _k) === 0) {
-                                    return e;
-                                }
-                            }
-                        ).length;
-                        _vl = ':' + _k + '_' + index;
-                        this.ExpressionAttributeValues[_vl] = value;
-                    }
                 }
-                keys[i] = keys[i].replace(keys[i], '#' + _key);
-                _kk = _k;
+                if (i == (keys.length - 1)) {
+                    let index = $.count(this.ExpressionAttributeValues, ':' + _k);
+                    _vl = ':' + _k + '_' + index;
+                    this.ExpressionAttributeValues[_vl] = value;
+                }
             }
-            
-            _kk = keys.join('.').replace('#','');
+            keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(this.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')));
+            //_kk = _k;
         }
+        
+        _key = keys.join('.').replace('#','');
 
         switch (op) {
             case 'begins_with':
@@ -146,37 +151,51 @@ export class FilterExpression {
                 exp = 'contains([key], [value])';   
                 break;
             case 'IN':
-                let _v = this.ExpressionAttributeValues[_vl];
+                let _v = this.ExpressionAttributeValues[_vl].sort();
+                //let _k = ':' + _vl + '_' + index;
                 if (_v.indexOf(null) > -1 || _v.indexOf(undefined) > -1) {
                     if (_v.length == 2) {
-                        let _k = ':' + _kk + '_' + index;
-                        this.ExpressionAttributeValues[_k] = _v.sort()[0];
-                        exp = '( [key] = [value] OR attribute_not_exists([key]) )';
+                        this.ExpressionAttributeValues[_vl] = _v[0];
+                        this.ExpressionAttributeValues[':null'] = null;
+                        exp = '( contains([key],[value]) OR attribute_not_exists([key]) OR [key] = :null )';
                     } else {
-                        let _vs = [];
                         _v = _v.filter(e => e != null);
-                        _v.forEach(
+                        let _vs = _v.map(
                             (e,i) => {
-                                let _k = ':' + _kk + '_' + index + '_' + i;
+                                let _k = _vl + '_' + i;//+ _kk + '_' + index + '_' + i;
+                                let exp = 'contains([key],[value])';
                                 this.ExpressionAttributeValues[_k] = e;
-                                delete this.ExpressionAttributeValues[_vl];
-                                _vs.push(_k);
+                                exp = exp.replace('[value]', _k);
+                                return exp;
                             }
                         )
-                        exp = '( [key] IN [value] OR attribute_not_exists([key]) )'.replace('[value]', '(' + _vs.join() + ')');
+                        delete this.ExpressionAttributeValues[_vl];
+                        this.ExpressionAttributeValues[':null'] = null;
+                        exp = '( [exp] OR attribute_not_exists([key]) OR [key] = :null )'.replace('[exp]', _vs.join(' OR '));
                     }
                 } else {
-                    let _vs = [];
+                    //let _k = ':' + _kk + '_' + index;
                     _v = _v.filter(e => e != null);
-                    _v.forEach(
+                    //this.ExpressionAttributeValues[_k] = _v;
+                    let _vs = _v.map(
                         (e,i) => {
-                            let _k = ':' + _kk + '_' + index + '_' + i;
+                            let _k = _vl + '_' + i; //':' + _kk + '_' + index + '_' + i;
                             this.ExpressionAttributeValues[_k] = e;
-                            delete this.ExpressionAttributeValues[_vl];
-                            _vs.push(_k);
+                            if (_all) {
+                                let exp = 'contains([key],[value])';
+                                exp = exp.replace('[value]', _k);
+                                return exp;
+                            }
+                            return _k;
                         }
                     )
-                    exp = '[key] IN [value]'.replace('[value]', '(' + _vs.join() + ')');
+                    delete this.ExpressionAttributeValues[_vl];
+                    //delete this.ExpressionAttributeValues[_k];
+                    if (_all) {
+                        exp = '( [exp] )'.replace('[exp]', _vs.join(' AND '));
+                    } else {
+                        exp = '[key] IN ([value])'.replace('[value]', _vs.join());
+                    }
                 }
                 break;
             default:
@@ -184,7 +203,7 @@ export class FilterExpression {
                 break;
         }
 
-        exp = exp.replace(/\[key\]/g, '#' + _kk);
+        exp = exp.replace(/\[key\]/g, '#' + _key);
         exp = exp.replace(/\[value\]/g, _vl);
         exp = exp.replace(/\[op\]/g, op);
 
@@ -196,13 +215,9 @@ export class FilterExpression {
     }
 
     build(query = {}, key = null, not = false, _op = null) : FilterExpression {
-        let exp, _cmp_;
+        let exp, _cmp_, size = 0;
         Object.keys(query).forEach(
             (q,i) => {
-
-                // if (query['_id']) {
-                //     delete query['_id'];
-                // }
 
                 if (i < Object.keys(query).length - 1 && Object.keys(query).length > 1) {
                     if (_op) {
@@ -221,6 +236,11 @@ export class FilterExpression {
                         throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Operator [' + q + '] not supported');
                     case '$or':
                     case '$and':
+                        query[q] = query[q].filter(sq => {
+                            if (sq && sq.constructor === Object && Object.keys(sq).length > 0) {
+                                return sq;
+                            }
+                        });
                         query[q].forEach(
                             (subquery,j) => {
                                 if (j < Object.keys(query[q]).length - 1 && Object.keys(query[q]).length > 1) {
@@ -246,17 +266,15 @@ export class FilterExpression {
                         break;
                     case '$in':
                     case '$nin':
-                        let list = query[q] || [];
-                        if (list.length === 0) list = ['*']; //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [$in] cannot be empty');
-                        if (list.length === 1) {
-                            query[key] = query[q][0];
-                            delete query[q];
-                            this.build(query, key, not, _op);
-                        } else {
-                            not = q == '$nin' ? true : not;
-                            exp = this.createExp(key, query[q], 'IN', not);
-                            this.FilterExpression = this.FilterExpression.replace('[first]', exp);
-                        }
+                        not = q == '$nin' ? true : not;
+                        query[q] = query[q] || [];
+                        size = query[q].length;
+                        if (size === 0) query[q] = ['*']; //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [$in] cannot be empty');
+                        if (size === 1) query[q] = query[q][0];
+                        if (size > 100) query[q] = query[q].slice(0,99); //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : The [$in] operator is provided with too many operands, ' + size);
+                        _cmp_ = size === 1 ? '=' : 'IN';
+                        exp = this.createExp(key, query[q], _cmp_, not);
+                        this.FilterExpression = this.FilterExpression.replace('[first]', exp);
                         break;
                     case '$regex':
                         _cmp_ = query[q].startsWith('^') ? 'begins_with' : 'contains';
@@ -274,12 +292,19 @@ export class FilterExpression {
                     case '$not':
                         this.build(query[q], key, true, _op);
                         break;
+                    case '$all':
+                        query[q] = (query[q].constructor === Array ? query[q] : []).sort();
+                        exp = this.createExp(key, query[q], 'IN', not, true);
+                        this.FilterExpression = this.FilterExpression.replace('[first]', exp);
+                        break;
                     default:
                         if (query[q] && query[q].constructor === Object && this.isQuery(query[q])) {
                             this.build(query[q], q, not, _op);
                         } else {
-                            if (query[q] == undefined) {
+                            if (query[q] === undefined) {
                                 exp = this.createExp(q, query[q], 'attribute_not_exists', not);
+                            } else if (query[q] === null) {
+                                exp = this.createExp(q, query[q], '=', not);
                             } else {
                                 exp = this.createExp(q, query[q], '=', not);
                             }
@@ -424,28 +449,50 @@ export class Partition {
     }
 
     _getProjectionExpression(keys : string[], _params) : string {
+        let projection : string[] = [];
 
         if (!_params.ExpressionAttributeNames) {
             _params.ExpressionAttributeNames = {};
         }
+
+        _params.ExpressionAttributeNames['#id'] = '_id';
+        _params.ExpressionAttributeNames['#sortId'] = '_sk_id';
+        _params.ExpressionAttributeNames['#updated_at'] = '_updated_at';
+        _params.ExpressionAttributeNames['#created_at'] = '_created_at';
         
         let attributes = Object.keys(_params.ExpressionAttributeNames);
-        keys = keys.map(
-            key => {
-                const keys = key.split('.');
-                for (let i=0; i < keys.length; i++) {
-                    let _key = '#' + keys[i].replace(/^(_|\$)+/, '');
+        keys.forEach(key => {
+            if (key) {
+                let path = key.split('.');
+                for (let i=0; i < path.length; i++) {
+                    let _key = '#' + path[i].replace(/^(_|\$)+/, '');
                     _key = _key.replace(/\[[0-9]+\]/, '');
-                    if (!(_key in attributes)) {
-                        _params.ExpressionAttributeNames[_key] = key;
+                    _key = _key.toLowerCase();
+                    if (attributes.indexOf(_key) == -1) {
+                        if ($.getKey(_params.ExpressionAttributeNames, path[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                            let index = $.count(_params.ExpressionAttributeNames, _key);
+                            if (index > 0) {
+                                _key = _key + '_' + index;
+                            }
+                            _params.ExpressionAttributeNames[_key] = path[i].replace(/\[[0-9]+\]/g, '');
+                        }
+                        //_params.ExpressionAttributeNames[_key] = key;
                     }
-                    keys[i] = _key;
+                    //path[i] = _key;
+                    path[i] = path[i].replace(path[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, path[i].replace(/\[[0-9]+\]/g, '')));
                 }
-                return keys.join('.');
+                const _p = path.join('.');
+                if (keys.length > 0 && projection.indexOf(_p) == -1) {
+                    projection.push(path.join('.'));
+                }
             }
-        )
+        });
 
-        return keys.join(', ');
+        if (projection.indexOf('#id') == -1) projection.push('#id');
+        if (projection.indexOf('#sortId') == -1) projection.push('#sortId');
+        if (projection.indexOf('#updated_at') == -1) projection.push('#updated_at');
+        if (projection.indexOf('#created_at') == -1) projection.push('#created_at');
+        return projection.sort().join(', ');
     }
 
     _getUpdateExpression(object : Object, _params) : string {
@@ -458,76 +505,159 @@ export class Partition {
             _params.ExpressionAttributeValues = {};
         }
 
-        let $set = object || {}, $unset = [];
-        let _set = [], _unset = [];
+        let $set = {}, $unset = [], $inc = {};
+        let _set = [], _unset = [], _inc = [];
         let exp;
 
-        if (Object.keys(object).length > 0) {
-            if (object.hasOwnProperty('$set')) {
-                $set = object['$set'] || {};
-            }
-
-            if (object.hasOwnProperty('$unset')) {
-                $unset = object['$unset'] || {};
-            }
-
-            let attributes = Object.keys(_params.ExpressionAttributeNames);
-            //let lv = genRandomString(5);
-            Object.keys($set).forEach(key => {
-                if ($set[key] != undefined) {
-                    const lv = genRandomString(5);
-                    const keys = key.split('.');
-                    for (let i=0; i < keys.length; i++) {
-                        let _key = keys[i].replace(/^(_|\$)+/, '');
-                        _key = _key.toLowerCase();
-                        let _k = _key.replace(/\[[0-9]+\]/g, '');
-                        if (!(_key in attributes)) {
-                            _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
-                            if (i == (keys.length - 1)) {
-                                _params.ExpressionAttributeValues[':' + lv] = $set[key];
-                            }
-                        }
-                        keys[i] = keys[i].replace(keys[i], _key);
-                    }
-                    let exp = '[key] = [value]';
-                    exp = exp.replace('[key]',   '#' + keys.join('.'));
-                    exp = exp.replace('[value]', ':' + lv);
-                    _set.push(exp);
-                } else {
-                    if (!(key in $unset)) {
-                        _unset.push(key);
-                    }
+        Object.keys(object || {}).forEach(
+            _op => {
+                switch (_op) {
+                    case '$setOnInsert':
+                    case '$set':
+                        $set = object['$set'] || {};
+                        delete $set['_id'];
+                        delete $set['_sk_id'];
+                        delete $set['_pk_className'];
+                        break;
+                    case '$unset':
+                        $unset = object['$unset'] || {};
+                        delete $unset['_id'];
+                        delete $unset['_sk_id'];
+                        delete $unset['_pk_className'];
+                        break;
+                    case '$inc':
+                        $inc = object['$inc'] || {};
+                        delete $inc['_id'];
+                        delete $inc['_sk_id'];
+                        delete $inc['_pk_className'];
+                        break;
+                    case '$mul':
+                    case '$min':
+                    case '$max':
+                    case '$rename':
+                    case '$currentDate':
+                    case '$each':
+                    case '$sort':
+                    case '$slice':
+                    case '$position':
+                    case '$bit':
+                    case '$isolated':
+                        throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [' + _op + '] not supported on update');
+                    default:
+                        $set = object;
+                        break;
                 }
-            });
+            }
+        );
 
-            _unset = _unset.concat(Object.keys($unset).map(
-                key => {
-                    const keys = key.split('.');
-                    for (let i=0; i < keys.length; i++) {
-                        let _key = '#' + keys[i].replace(/^(_|\$)+/, '');
-                        _key = _key.replace(/\[[0-9]+\]/g, '');
-                        if (!(_key in attributes)) {
+        let attributes = Object.keys(_params.ExpressionAttributeNames || {});
+        let attributes_v = $.values(_params.ExpressionAttributeNames || {});
+
+        Object.keys($set).forEach(key => {
+            if ($set[key] != undefined) {
+                const lv = genRandomString(5);
+                const keys = key.split('.');
+                for (let i=0; i < keys.length; i++) {
+                    let _key = keys[i].replace(/^(_|\$)+/, '');
+                    _key = _key.toLowerCase();
+                    let _k = _key.replace(/\[[0-9]+\]/g, '');
+                    if (attributes.indexOf(_key) == -1) {
+                        if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                            let index = $.count(_params.ExpressionAttributeNames, '#' + _k);
+                            if (index > 0) {
+                                _k = _k + '_' + index;
+                            }
+                            _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
+                        }
+                        if (i == (keys.length - 1)) {
+                            _params.ExpressionAttributeValues[':' + lv] = $set[key];
+                        }
+                    }
+                    keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
+                                     .replace('#', '');
+                }
+                let exp = '[key] = [value]';
+                exp = exp.replace('[key]', '#' + keys.join('.'));
+                exp = exp.replace('[value]', ':' + lv);
+                _set.push(exp);
+            } else {
+                if ($unset.indexOf(key) == -1) {
+                    _unset.push(key);
+                }
+            }
+        });
+
+        Object.keys($inc).forEach(key => {
+            if ($inc[key] != undefined) {
+                const lv = genRandomString(5);
+                const keys = key.split('.');
+                for (let i=0; i < keys.length; i++) {
+                    let _key = keys[i].replace(/^(_|\$)+/, '');
+                    _key = _key.toLowerCase();
+                    let _k = _key.replace(/\[[0-9]+\]/g, '');
+                    if (attributes.indexOf(_key) == -1) {
+                        if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                            let index = $.count(_params.ExpressionAttributeNames, '#' + _k);
+                            if (index > 0) {
+                                _k = _k + '_' + index;
+                            }
+                            _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
+                        }
+                        if (i == (keys.length - 1)) {
+                            _params.ExpressionAttributeValues[':' + lv] = $inc[key];
+                        }
+                    }
+                    //keys[i] = keys[i].replace(keys[i], _key);
+                    keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
+                                     .replace('#', '');
+                }
+                let exp = '[key] = [key] + [value]';
+                exp = exp.replace(/\[key\]/g,   '#' + keys.join('.'));
+                exp = exp.replace('[value]', ':' + lv);
+                _set.push(exp);
+            }
+        });
+
+        _unset = _unset.concat(Object.keys($unset).map(
+            key => {
+                const keys = key.split('.');
+                for (let i=0; i < keys.length; i++) {
+                    let _key = '#' + keys[i].replace(/^(_|\$)+/, '');
+                    _key = _key.replace(/\[[0-9]+\]/g, '');
+                    if (attributes.indexOf(_key) == -1) {
+                        if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                            let index = $.count(_params.ExpressionAttributeNames, _key);
+                            if (index > 0) {
+                                _key = _key + '_' + index;
+                            }
                             _params.ExpressionAttributeNames[_key] = keys[i].replace(/\[[0-9]+\]/g, '');
                         }
-                        keys[i] = keys[i].replace(keys[i], _key);
                     }
-                    return keys.join('.');
+                    //keys[i] = keys[i].replace(keys[i], _key);
+                    keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
+                                     .replace('#', '');
                 }
-            ));
+                return keys.join('.');
+            }
+        ));
 
-            if (_set.length > 0) {
+        if (_set.length > 0) {
+            if (exp) {
+                exp = exp + ' SET ' + _set.join(', ');
+            } else {
                 exp = 'SET ' + _set.join(', ');
             }
+        }
 
-            if (_unset.length) {
-                if (exp) {
-                    exp = exp + ' REMOVE ' + _unset.join(', ');
-                } else {
-                    exp = 'REMOVE ' + _unset.join(', ');
-                }
+        if (_unset.length) {
+            if (exp) {
+                exp = exp + ' REMOVE ' + _unset.join(', ');
+            } else {
+                exp = 'REMOVE ' + _unset.join(', ');
             }
         }
         
+        //console.log('UPDATE EXPRESSION', exp);
         return exp;
     }
 
@@ -565,7 +695,7 @@ export class Partition {
     }
 
     _query(query: Object = {}, options : Options = {}) : Promise {
-        
+        //if (Object.keys(query).length > 0) console.log('QUERY', this.className, u.inspect(query, false, null));
         const between = (n, a, b) => {
             return (n - a) * (n - b) <= 0
         }
@@ -617,22 +747,12 @@ export class Partition {
                         if (Object.keys(query).length > 0) {
                         
                             let exp : FilterExpression = new FilterExpression();
-                            let _query1 = JSON.parse(JSON.stringify(query));
-                            //let _query2 = JSON.parse(JSON.stringify(query));
-                            exp = exp.build(_query1);
+                            exp = exp.build(query);
                             _params.FilterExpression = exp.FilterExpression;
                             _params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
                             _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
                             _params.ExpressionAttributeNames['#className'] = '_pk_className';
                             _params.ExpressionAttributeValues[':className'] = this.className;
-
-                            // exp = exp.buildKC(_query2);
-                            //if (!exp.KeyConditionExpression.startsWith('[first]')) {
-                            //_params.KeyConditionExpression = '#className = :className';
-                            //_params.KeyConditionExpression = _params.KeyConditionExpression.replace('[next]', exp.KeyConditionExpression);
-                            
-                            //delete _params.KeyConditions;
-                            // }
                         }
 
                         if (descending) {
@@ -645,7 +765,7 @@ export class Partition {
 
                         params = _params;
                     }
-
+                    if (params.ProjectionExpression) console.log('QUERY EXP', this.className, params.ProjectionExpression, params.ExpressionAttributeNames);
                     this.dynamo.query(params, (err, data) => {
                         if (err) {
                             reject(err);
@@ -665,7 +785,7 @@ export class Partition {
                                 delete item._pk_className;
                                 delete item._sk_id;
                             });
-
+                            //console.log('QUERY RESULT', this.className, u.inspect(results, false, null))
                             resolve(results);
                         }
                     });
@@ -685,9 +805,9 @@ export class Partition {
             return this._get(id, keys);
         }
 
-        if (options.keys && options.keys['_id']) {
-            delete options.keys['_id'];
-        }
+        // if (options.keys && options.keys['_id']) {
+        //     delete options.keys['_id'];
+        // }
 
         return this._query(query, options);
     }
@@ -728,7 +848,7 @@ export class Partition {
     }
 
     updateOne(query = {}, object : Object) : Promise {
-        console.log('UPDATE', query, object);
+        //console.log('UPDATE', query, object);
         let id = query['_id'] || object['_id'];
         
         let params : DynamoDB.DocumentClient.UpdateItemInput = {
@@ -768,6 +888,7 @@ export class Partition {
             (resolve, reject) => {
                 find.then((id) => {
                     params.Key._sk_id = id;
+                    //console.log('UPDATE PARAMS', params);
                     this.dynamo.update(params, (err, data) => {
                         if (err) {
                             reject(err);
@@ -913,7 +1034,7 @@ export class Partition {
                         return {
                             DeleteRequest : {
                                 Key : {
-                                    _pk_className : item.className,
+                                    _pk_className : this.className,
                                     _sk_id : item._id
                                 }
                             }

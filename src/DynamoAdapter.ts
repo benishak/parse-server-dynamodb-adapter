@@ -159,18 +159,60 @@ export class Adapter {
 
     deleteAllClasses() : Promise {
         // only for test
-        let exec = require('child_process').execSync;
-        return this.service.describeTable({ TableName : this.database })
-            .promise()
-                .catch(() => {
-                    return exec('aws dynamodb delete-table --table-name parse-server --endpoint http://localhost:8000');
-                })
-                .catch(() => {
-                    return exec('aws dynamodb create-table --table-name parse-server --attribute-definitions AttributeName=_pk_className,AttributeType=S AttributeName=_sk_id,AttributeType=S --key-schema AttributeName=_pk_className,KeyType=HASH AttributeName=_sk_id,KeyType=RANGE --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 --endpoint-url http://localhost:8000');
-                })
-                .catch(() => {
-                    return Promise.resolve();
+        let exec = require('child_process').execSync
+        return new Promise((resolve, reject) => {
+            let promise;
+            this.service.describeTable({ TableName : this.database }, (err, data) => {
+                if (err) {
+                    promise = Promise.resolve();
+                } else {
+                    promise = this.service.deleteTable({ TableName : this.database }).promise();
+                }
+
+                const params = {
+                    AttributeDefinitions: [
+                        {
+                            AttributeName: "_pk_className", 
+                            AttributeType: "S"
+                        }, 
+                        {
+                            AttributeName: "_sk_id", 
+                            AttributeType: "S"
+                        }
+                    ], 
+                    KeySchema: [
+                        {
+                            AttributeName: "_pk_className", 
+                            KeyType: "HASH"
+                        }, 
+                        {
+                            AttributeName: "_sk_id", 
+                            KeyType: "RANGE"
+                        }
+                    ],
+                    ProvisionedThroughput: {
+                        ReadCapacityUnits: 5,
+                        WriteCapacityUnits: 5
+                    }, 
+                    TableName: this.database
+                };
+
+                promise.then(() => {
+                    // give time for deleting/creating the table!
+                    return Promise.delay(150).then(() => {
+                        return this.service.createTable(params, (err, data) => {
+                            if (err) {
+                                reject()
+                            } else {
+                                return Promise.delay(150).then(() => {
+                                    resolve();
+                                });
+                            }
+                        });
+                    });
                 });
+            });
+        });
     }
 
     deleteFields(className, schema, fieldNames) : Promise {
@@ -328,8 +370,10 @@ export class Adapter {
 
     count(className, schema, query) {
         schema = Transform.convertParseSchemaToMongoSchema(schema);
+        query = Transform.transformWhere(className, query, schema);
+        query = this.transformDateObject(query);
 
-        return this._adaptiveCollection(className).count(Transform.transformWhere(className, query, schema))
+        return this._adaptiveCollection(className).count(query)
             .catch(
                 error => { throw error }
             );

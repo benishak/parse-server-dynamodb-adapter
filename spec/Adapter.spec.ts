@@ -7,6 +7,7 @@ import { Adapter } from '../src/DynamoAdapter';
 import { DynamoDB } from 'aws-sdk';
 import { mongoSchemaToParseSchema } from '../src/SchemaPartition';
 import { generate as randomString } from 'randomstring';
+import * as Promise from 'bluebird';
 
 const AWS = require('aws-sdk-mock');
 
@@ -59,10 +60,10 @@ const $ = DDB.getAdapter();
 
 @suite class DDBSOps {
 
-    @context mocha;
-
-    before() {
-        $.deleteAllClasses();
+    before(done) {
+        $.deleteAllClasses().then(() => {
+            done();
+        });
     }
 
     @test 'stores objectId in _id'(done) {

@@ -157,18 +157,25 @@ const __ops2 = ['$exists'];
 
     @test 'DynamoDB KeyConditionrExpression : should generate $and query of _id'() {
         let exp = new Query();
-        exp.buildKC({
+        exp.build({
             $and : [
                 { _id : 123 },
-                { _id : 111 }
+                { _id : 111 },
+                { _id : 666 },
+                { id : 500 },
+                { 'item.id' : 0 },
+                { 'item[0].user.id' : 'abc' },
+                { 'item[0].user.id[1]' : 'abc' }
             ]
         });
 
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(4);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(7);
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
         expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
-        expect(exp.KeyConditionExpression).to.be.equal('#id = :id_0 AND #id = :id_1');
+        expect(exp.FilterExpression).to.be.equal(
+            '#id = :id_0 AND #id = :id_1 AND #id = :id_2 AND #id_1 = :id_1_1 AND #item.#id_1 = :id_4 AND #item[0].#user.#id_1 = :id_5 AND #item[0].#user.#id_1[1] = :id_6'
+        );
     }
 
     @test 'DynamoDB KeyConditionrExpression : should throw error when using $and query of _id with $not'() {
@@ -515,10 +522,67 @@ const __ops2 = ['$exists'];
             }
         ]});
 
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(6);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(10);
-        expect(exp.FilterExpression).to.be.equal(
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(6);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(10);
+        expect(exp.FilterExpression).to.equal(
             '#balance > :balance_0 AND #balance < :balance_1 OR #quantity <> :quantity_0 AND #quantity <> :quantity_1 AND #product IN (:product_0_0,:product_0_1) AND NOT ( #stat IN (:stat_0_0,:stat_0_1) ) AND #author = :author_0 AND ( #stars = :stars_0 OR attribute_not_exists(#stars) )'
+        );
+    }
+
+    @test 'DynamoDB FilterExpression : $and query with empty subquery'() {
+        let exp = new Query();
+        exp.build({ '$and': [ {}, { _p_user: '_User$vtp2pCZmv2' } ],
+            _rperm: { '$in': [ null, '*', 'vtp2pCZmv2' ] } });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(2);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(4);
+        expect(exp.ExpressionAttributeValues[':null']).to.equal(null);
+        expect(exp.FilterExpression).to.equal(
+            '#p_user = :p_user_0 AND ( contains(#rperm,:rperm_0_0) OR contains(#rperm,:rperm_0_1) OR attribute_not_exists(#rperm) OR #rperm = :null )'
+        );
+    }
+
+    @test 'DynamoDB FilterExpression : applying more than one query on same key 1'() {
+        let exp = new Query();
+        exp.build({ _id: { '$eq': 'unWCHGvGFE', '$nin': [ '8q4qVagG1h', 'unWCHGvGFE' ] },
+                    _rperm: { '$in': [ null, '*', '3sRA9jCEGC' ] } });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(2);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(6);
+        expect(exp.ExpressionAttributeValues[':null']).to.equal(null);
+        expect(exp.FilterExpression).to.equal(
+            '#id = :id_0 AND NOT ( #id IN (:id_1_0,:id_1_1) ) AND ( contains(#rperm,:rperm_0_0) OR contains(#rperm,:rperm_0_1) OR attribute_not_exists(#rperm) OR #rperm = :null )'
+        );
+    }
+
+    @test 'DynamoDB FilterExpression : applying more than one query on same key 2'() {
+        let exp = new Query();
+        exp.build({ _id: 
+            { '$in': 
+                [   'G0kOG5lMpz',
+                    'eLrvwTQ25l',
+                    'NDteakhAun',
+                    'NDteakhAun',
+                    'eLrvwTQ25l' ],
+                '$nin': [ 'NDteakhAun', 'eLrvwTQ25l' ] 
+            } 
+        });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(7);
+        expect(exp.FilterExpression).to.equal(
+            '#id IN (:id_0_0,:id_0_1,:id_0_2,:id_0_3,:id_0_4) AND NOT ( #id IN (:id_5_0,:id_5_1) )'
+        );
+    }
+
+    @test 'DynamoDB FilterExpression : can do $all containsAll'() {
+        let exp = new Query();
+        exp.build({ numbers: { '$all': [ 1, 2, 3 ] } });
+
+        expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(1);
+        expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(3);
+        expect(exp.FilterExpression).to.equal(
+            '( contains(#numbers,:numbers_0_0) AND contains(#numbers,:numbers_0_1) AND contains(#numbers,:numbers_0_2) )'
         );
     }
 
@@ -541,5 +605,18 @@ const __ops2 = ['$exists'];
         vl = Object.keys(params['ExpressionAttributeValues'])[0];
         
         expect(exp).to.be.equal('SET #foo = ' + vl);
+    }
+
+    @test 'DynamoDB UpdateExpression : inc one attribute'() {
+        let partition = new Partition('test', 'test', new DynamoDB());
+        let params = {};
+        let exp = partition._getUpdateExpression({
+            $inc : {
+                foo : 1
+            }
+        }, params);
+        let vl = Object.keys(params['ExpressionAttributeValues'])[0];
+
+        expect(exp).to.be.equal('SET #foo = #foo + ' + vl);
     }
 }

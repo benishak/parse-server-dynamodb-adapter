@@ -668,7 +668,8 @@ export class Partition {
             Key: {
                 _pk_className : this.className,
                 _sk_id : id
-            }
+            },
+            ConsistentRead : true
         }
 
         if (keys.length > 0) {
@@ -737,7 +738,8 @@ export class Partition {
                             },
                             ExpressionAttributeValues : {
                                 ':className' : this.className
-                            }
+                            },
+                            ConsistentRead : true
                         }
 
                         if (!count) {
@@ -927,7 +929,7 @@ export class Partition {
             return this.find(query, options).then(
                 (res) => {
                     let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
-                        RequestItems : {}
+                        RequestItems : {},
                     }
 
                     params.RequestItems[this.database] = res.map(item => {

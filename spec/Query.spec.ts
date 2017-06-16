@@ -617,6 +617,6 @@ const __ops2 = ['$exists'];
         }, params);
         let vl = Object.keys(params['ExpressionAttributeValues'])[0];
 
-        expect(exp).to.be.equal('SET #foo = #foo + ' + vl);
+        expect(exp).to.be.equal('SET #foo = if_not_exists(#foo,:__zero__) + :foo_0');
     }
 }

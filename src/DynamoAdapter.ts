@@ -159,6 +159,34 @@ export class Adapter {
 
     deleteAllClasses() : Promise {
         // only for test
+        const params = {
+            AttributeDefinitions: [
+                {
+                    AttributeName: "_pk_className", 
+                    AttributeType: "S"
+                }, 
+                {
+                    AttributeName: "_sk_id", 
+                    AttributeType: "S"
+                }
+            ], 
+            KeySchema: [
+                {
+                    AttributeName: "_pk_className", 
+                    KeyType: "HASH"
+                }, 
+                {
+                    AttributeName: "_sk_id", 
+                    KeyType: "RANGE"
+                }
+            ],
+            ProvisionedThroughput: {
+                ReadCapacityUnits: 5,
+                WriteCapacityUnits: 5
+            }, 
+            TableName: this.database
+        };
+
         let exec = require('child_process').execSync
         return new Promise((resolve, reject) => {
             let promise;
@@ -169,46 +197,21 @@ export class Adapter {
                     promise = this.service.deleteTable({ TableName : this.database }).promise();
                 }
 
-                const params = {
-                    AttributeDefinitions: [
-                        {
-                            AttributeName: "_pk_className", 
-                            AttributeType: "S"
-                        }, 
-                        {
-                            AttributeName: "_sk_id", 
-                            AttributeType: "S"
-                        }
-                    ], 
-                    KeySchema: [
-                        {
-                            AttributeName: "_pk_className", 
-                            KeyType: "HASH"
-                        }, 
-                        {
-                            AttributeName: "_sk_id", 
-                            KeyType: "RANGE"
-                        }
-                    ],
-                    ProvisionedThroughput: {
-                        ReadCapacityUnits: 5,
-                        WriteCapacityUnits: 5
-                    }, 
-                    TableName: this.database
-                };
+                
 
                 promise.then(() => {
-                    // give time for deleting/creating the table!
-                    return Promise.delay(150).then(() => {
-                        return this.service.createTable(params, (err, data) => {
-                            if (err) {
-                                reject()
-                            } else {
-                                return Promise.delay(150).then(() => {
-                                    resolve();
-                                });
-                            }
-                        });
+                    return Promise.delay(100);
+                }).catch(() => {
+                    return Promise.resolve();
+                }).then(() => {
+                    return this.service.createTable(params, (err, data) => {
+                        if (err) {
+                            reject()
+                        } else {
+                            Promise.delay(100).then(() => {
+                                resolve();
+                            });
+                        }
                     });
                 });
             });

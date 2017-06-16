@@ -550,6 +550,7 @@ export class Partition {
                         break;
                     case '$inc':
                         $inc = object['$inc'] || {};
+                        _params.ExpressionAttributeValues[':__zero__'] = 0;
                         delete $inc['_id'];
                         delete $inc['_sk_id'];
                         delete $inc['_pk_className'];
@@ -636,7 +637,7 @@ export class Partition {
                 // }
 
                 let keys = FilterExpression._transformPath(_params, key, $inc[key]);
-                let exp = '[key] = [key] + [value]';
+                let exp = '[key] = if_not_exists([key],:__zero__) + [value]';
                 exp = exp.replace(/\[key\]/g, keys);
                 exp = exp.replace('[value]', _params._v);
                 _set.push(exp);

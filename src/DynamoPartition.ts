@@ -55,6 +55,7 @@ export class FilterExpression {
     KeyConditionExpression : string = '[first]';
     ExpressionAttributeValues = {};
     ExpressionAttributeNames = {};
+    private _v : string;
 
     comperators = {
         '$gt': '>',
@@ -92,48 +93,15 @@ export class FilterExpression {
         return $;
     }
 
-    createExp(key, value, op, not = false, _all = false) : string {
+    createExp(key : string, value : any, op, not = false, _all = false) : string {
         
         if (!op) {
             throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : Operation is not supported');
         }
 
-
-        let _key = key.replace(/^(_|\$)+/, '');
-
-        let exp : string;
-        let index = 0;
-        let _vl; //genRandomString(4);
-        let _kk;
-
-        let keys = key.split('.');
-
-        let attributes = Object.keys(this.ExpressionAttributeNames);
-        for (let i=0; i < keys.length; i++) {
-            let _key = keys[i].replace(/^(_|\$)+/, '');
-            _key = _key.toLowerCase();
-            let _k = _key.replace(/\[[0-9]+\]/g, '');
-            if (attributes.indexOf(_key) == -1) {
-                // we must make sure we don't re-reference key again 
-                // because it causes ValidationException in DynamoDB
-                if ($.getKey(this.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
-                    let index = $.count(this.ExpressionAttributeNames, '#' + _k);
-                    if (index > 0) {
-                        _k = _k + '_' + index;
-                    }
-                    this.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
-                }
-                if (i == (keys.length - 1)) {
-                    let index = $.count(this.ExpressionAttributeValues, ':' + _k);
-                    _vl = ':' + _k + '_' + index;
-                    this.ExpressionAttributeValues[_vl] = value;
-                }
-            }
-            keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(this.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')));
-            //_kk = _k;
-        }
-        
-        _key = keys.join('.').replace('#','');
+        let exp : string = '';
+        let _key : string = FilterExpression._transformPath(this, key, value);
+        let _vl = this._v;
 
         switch (op) {
             case 'begins_with':
@@ -203,7 +171,7 @@ export class FilterExpression {
                 break;
         }
 
-        exp = exp.replace(/\[key\]/g, '#' + _key);
+        exp = exp.replace(/\[key\]/g, _key);
         exp = exp.replace(/\[value\]/g, _vl);
         exp = exp.replace(/\[op\]/g, op);
 
@@ -212,6 +180,61 @@ export class FilterExpression {
         }
 
         return exp;
+    }
+
+    // set ExpressionAttributeNames and ExpressionAttributeValues
+    // and returns the transformed path
+    // e.g. _id -> #id
+    // e.g. item.users[1].id -> #item.#users[1].#id
+    static _transformPath(params : any, path : string, value : any = null) : string {
+
+        if (!path) {
+            throw new Error('Key cannot be empty');
+        }
+
+        params = params || {};
+
+        if (!params.hasOwnProperty('ExpressionAttributeNames')) {
+            params.ExpressionAttributeNames = {}
+        }
+
+        if (value && !params.hasOwnProperty('ExpressionAttributeNames')) {
+            params.ExpressionAttributeValues = {}
+        }
+
+        let _key = path.replace(/^(_|\$)+/, '');
+        let index = 0, _vl : string;
+        let keys = path.split('.');
+
+        let attributes = Object.keys(params.ExpressionAttributeNames);
+        for (let i=0; i < keys.length; i++) {
+            let _key = keys[i].replace(/^(_|\$)+/, '');
+            _key = _key.toLowerCase();
+            let _k = _key.replace(/\[[0-9]+\]/g, '');
+            if (attributes.indexOf(_key) == -1) {
+                // make sure key names doesn't overlap with each other
+                if ($.getKey(params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                    let index = $.count(params.ExpressionAttributeNames, '#' + _k);
+                    if (index > 0) {
+                        _k = _k + '_' + index;
+                    }
+                    params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
+                }
+
+                if (value != null) {
+                    if (i == (keys.length - 1)) {
+                        let index = $.count(params.ExpressionAttributeValues, ':' + _k);
+                        _vl = ':' + _k + '_' + index;
+                        params.ExpressionAttributeValues[_vl] = value;
+                    }
+                }
+            }
+            keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')));
+        }
+
+        params._v = _vl;
+
+        return keys.join('.');
     }
 
     build(query = {}, key = null, not = false, _op = null) : FilterExpression {
@@ -463,27 +486,27 @@ export class Partition {
         let attributes = Object.keys(_params.ExpressionAttributeNames);
         keys.forEach(key => {
             if (key) {
-                let path = key.split('.');
-                for (let i=0; i < path.length; i++) {
-                    let _key = '#' + path[i].replace(/^(_|\$)+/, '');
-                    _key = _key.replace(/\[[0-9]+\]/, '');
-                    _key = _key.toLowerCase();
-                    if (attributes.indexOf(_key) == -1) {
-                        if ($.getKey(_params.ExpressionAttributeNames, path[i].replace(/\[[0-9]+\]/g, '')) === null) {
-                            let index = $.count(_params.ExpressionAttributeNames, _key);
-                            if (index > 0) {
-                                _key = _key + '_' + index;
-                            }
-                            _params.ExpressionAttributeNames[_key] = path[i].replace(/\[[0-9]+\]/g, '');
-                        }
-                        //_params.ExpressionAttributeNames[_key] = key;
-                    }
-                    //path[i] = _key;
-                    path[i] = path[i].replace(path[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, path[i].replace(/\[[0-9]+\]/g, '')));
-                }
-                const _p = path.join('.');
+                // let path = key.split('.');
+                // for (let i=0; i < path.length; i++) {
+                //     let _key = '#' + path[i].replace(/^(_|\$)+/, '');
+                //     _key = _key.replace(/\[[0-9]+\]/, '');
+                //     _key = _key.toLowerCase();
+                //     if (attributes.indexOf(_key) == -1) {
+                //         if ($.getKey(_params.ExpressionAttributeNames, path[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                //             let index = $.count(_params.ExpressionAttributeNames, _key);
+                //             if (index > 0) {
+                //                 _key = _key + '_' + index;
+                //             }
+                //             _params.ExpressionAttributeNames[_key] = path[i].replace(/\[[0-9]+\]/g, '');
+                //         }
+                //         //_params.ExpressionAttributeNames[_key] = key;
+                //     }
+                //     //path[i] = _key;
+                //     path[i] = path[i].replace(path[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, path[i].replace(/\[[0-9]+\]/g, '')));
+                // }
+                const _p = FilterExpression._transformPath(_params, key);
                 if (keys.length > 0 && projection.indexOf(_p) == -1) {
-                    projection.push(path.join('.'));
+                    projection.push(_p);
                 }
             }
         });
@@ -555,30 +578,30 @@ export class Partition {
 
         Object.keys($set).forEach(key => {
             if ($set[key] != undefined) {
-                const lv = genRandomString(5);
-                const keys = key.split('.');
-                for (let i=0; i < keys.length; i++) {
-                    let _key = keys[i].replace(/^(_|\$)+/, '');
-                    _key = _key.toLowerCase();
-                    let _k = _key.replace(/\[[0-9]+\]/g, '');
-                    if (attributes.indexOf(_key) == -1) {
-                        if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
-                            let index = $.count(_params.ExpressionAttributeNames, '#' + _k);
-                            if (index > 0) {
-                                _k = _k + '_' + index;
-                            }
-                            _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
-                        }
-                        if (i == (keys.length - 1)) {
-                            _params.ExpressionAttributeValues[':' + lv] = $set[key];
-                        }
-                    }
-                    keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
-                                     .replace('#', '');
-                }
+                //const keys = key.split('.');
+                // for (let i=0; i < keys.length; i++) {
+                //     let _key = keys[i].replace(/^(_|\$)+/, '');
+                //     _key = _key.toLowerCase();
+                //     let _k = _key.replace(/\[[0-9]+\]/g, '');
+                //     if (attributes.indexOf(_key) == -1) {
+                //         if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                //             let index = $.count(_params.ExpressionAttributeNames, '#' + _k);
+                //             if (index > 0) {
+                //                 _k = _k + '_' + index;
+                //             }
+                //             _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
+                //         }
+                //         if (i == (keys.length - 1)) {
+                //             _params.ExpressionAttributeValues[':' + lv] = $set[key];
+                //         }
+                //     }
+                //     keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
+                //                      .replace('#', '');
+                // }
+                let keys = FilterExpression._transformPath(_params, key, $set[key]);
                 let exp = '[key] = [value]';
-                exp = exp.replace('[key]', '#' + keys.join('.'));
-                exp = exp.replace('[value]', ':' + lv);
+                exp = exp.replace('[key]', keys);
+                exp = exp.replace('[value]', _params._v);
                 _set.push(exp);
             } else {
                 if ($unset.indexOf(key) == -1) {
@@ -589,55 +612,57 @@ export class Partition {
 
         Object.keys($inc).forEach(key => {
             if ($inc[key] != undefined) {
-                const lv = genRandomString(5);
-                const keys = key.split('.');
-                for (let i=0; i < keys.length; i++) {
-                    let _key = keys[i].replace(/^(_|\$)+/, '');
-                    _key = _key.toLowerCase();
-                    let _k = _key.replace(/\[[0-9]+\]/g, '');
-                    if (attributes.indexOf(_key) == -1) {
-                        if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
-                            let index = $.count(_params.ExpressionAttributeNames, '#' + _k);
-                            if (index > 0) {
-                                _k = _k + '_' + index;
-                            }
-                            _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
-                        }
-                        if (i == (keys.length - 1)) {
-                            _params.ExpressionAttributeValues[':' + lv] = $inc[key];
-                        }
-                    }
-                    //keys[i] = keys[i].replace(keys[i], _key);
-                    keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
-                                     .replace('#', '');
-                }
+                // const lv = genRandomString(5);
+                // const keys = key.split('.');
+                // for (let i=0; i < keys.length; i++) {
+                //     let _key = keys[i].replace(/^(_|\$)+/, '');
+                //     _key = _key.toLowerCase();
+                //     let _k = _key.replace(/\[[0-9]+\]/g, '');
+                //     if (attributes.indexOf(_key) == -1) {
+                //         if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                //             let index = $.count(_params.ExpressionAttributeNames, '#' + _k);
+                //             if (index > 0) {
+                //                 _k = _k + '_' + index;
+                //             }
+                //             _params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
+                //         }
+                //         if (i == (keys.length - 1)) {
+                //             _params.ExpressionAttributeValues[':' + lv] = $inc[key];
+                //         }
+                //     }
+                //     //keys[i] = keys[i].replace(keys[i], _key);
+                //     keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
+                //                      .replace('#', '');
+                // }
+
+                let keys = FilterExpression._transformPath(_params, key, $inc[key]);
                 let exp = '[key] = [key] + [value]';
-                exp = exp.replace(/\[key\]/g,   '#' + keys.join('.'));
-                exp = exp.replace('[value]', ':' + lv);
+                exp = exp.replace(/\[key\]/g, keys);
+                exp = exp.replace('[value]', _params._v);
                 _set.push(exp);
             }
         });
 
         _unset = _unset.concat(Object.keys($unset).map(
             key => {
-                const keys = key.split('.');
-                for (let i=0; i < keys.length; i++) {
-                    let _key = '#' + keys[i].replace(/^(_|\$)+/, '');
-                    _key = _key.replace(/\[[0-9]+\]/g, '');
-                    if (attributes.indexOf(_key) == -1) {
-                        if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
-                            let index = $.count(_params.ExpressionAttributeNames, _key);
-                            if (index > 0) {
-                                _key = _key + '_' + index;
-                            }
-                            _params.ExpressionAttributeNames[_key] = keys[i].replace(/\[[0-9]+\]/g, '');
-                        }
-                    }
-                    //keys[i] = keys[i].replace(keys[i], _key);
-                    keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
-                                     .replace('#', '');
-                }
-                return keys.join('.');
+                // const keys = key.split('.');
+                // for (let i=0; i < keys.length; i++) {
+                //     let _key = '#' + keys[i].replace(/^(_|\$)+/, '');
+                //     _key = _key.replace(/\[[0-9]+\]/g, '');
+                //     if (attributes.indexOf(_key) == -1) {
+                //         if ($.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')) === null) {
+                //             let index = $.count(_params.ExpressionAttributeNames, _key);
+                //             if (index > 0) {
+                //                 _key = _key + '_' + index;
+                //             }
+                //             _params.ExpressionAttributeNames[_key] = keys[i].replace(/\[[0-9]+\]/g, '');
+                //         }
+                //     }
+                //     //keys[i] = keys[i].replace(keys[i], _key);
+                //     keys[i] = keys[i].replace(keys[i].replace(/\[[0-9]+\]/g, ''), $.getKey(_params.ExpressionAttributeNames, keys[i].replace(/\[[0-9]+\]/g, '')))
+                //                      .replace('#', '');
+                // }
+                return FilterExpression._transformPath(_params, key);
             }
         ));
 
@@ -657,6 +682,7 @@ export class Partition {
             }
         }
         
+        delete _params._v;
         //console.log('UPDATE EXPRESSION', exp);
         return exp;
     }
@@ -767,7 +793,7 @@ export class Partition {
 
                         params = _params;
                     }
-                    if (params.ProjectionExpression) console.log('QUERY EXP', this.className, params.ProjectionExpression, params.ExpressionAttributeNames);
+                    //if (params.ProjectionExpression) console.log('QUERY EXP', this.className, params.ProjectionExpression, params.ExpressionAttributeNames);
                     this.dynamo.query(params, (err, data) => {
                         if (err) {
                             reject(err);
@@ -784,6 +810,7 @@ export class Partition {
                             }
 
                             results.forEach((item) => {
+                                item._id = item._sk_id;
                                 delete item._pk_className;
                                 delete item._sk_id;
                             });
@@ -896,6 +923,7 @@ export class Partition {
                             reject(err);
                         } else {
                             if (data && data.Attributes) {
+                                data.Attributes._id = data.Attributes._sk_id;
                                 delete data.Attributes._pk_className;
                                 delete data.Attributes._sk_id;
                             }
@@ -928,6 +956,9 @@ export class Partition {
             }
             return this.find(query, options).then(
                 (res) => {
+                    res = res.filter(item => item._id != undefined);
+                    if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot delete nothing');
+
                     let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
                         RequestItems : {},
                     }
@@ -937,8 +968,8 @@ export class Partition {
                             PutRequest : {
                                 Item : {
                                     _pk_className : this.className,
-                                    _sk_id : item._sk_id,
-                                    _id : item._sk_id,
+                                    _sk_id : item._id,
+                                    _id : item._id,
                                     ...object
                                 }
                             }
@@ -1026,8 +1057,12 @@ export class Partition {
                 limit : 25,
                 keys : { _id : 1 }
             }
+            
             return this.find(query, options).then(
                 (res) => {
+                    res = res.filter(item => item._id != undefined);
+                    if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot delete nothing');
+
                     let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
                         RequestItems : {}
                     }

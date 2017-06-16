@@ -709,6 +709,7 @@ export class Partition {
                         reject(err);
                     } else {
                         if (data.Item) {
+                            data.Item._id = data.Item._sk_id;
                             delete data.Item._pk_className;
                             delete data.Item._sk_id;
                             resolve([data.Item]);
@@ -826,7 +827,7 @@ export class Partition {
     }
 
     find(query: Object = {}, options : Options = {}) : Promise {
-        if (query.hasOwnProperty('_id') && typeof query['_id'] === 'string') {
+        if (query.hasOwnProperty('_id') && typeof query['_id'] === 'string' && !query.hasOwnProperty('_rperm')) {
             let id = query['_id'];
             let _keys = options.keys || {};
             //delete _keys['_id'];
@@ -909,7 +910,13 @@ export class Partition {
             }
         }
 
-        delete object['_id'];
+        
+        let exp = new FilterExpression();
+        exp = exp.build(query);
+        params.ConditionExpression = exp.FilterExpression;
+        params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+        params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+
         params.UpdateExpression = this._getUpdateExpression(object, params);
         object = null; // destroy object;
 
@@ -920,7 +927,8 @@ export class Partition {
                     //console.log('UPDATE PARAMS', params);
                     this.dynamo.update(params, (err, data) => {
                         if (err) {
-                            reject(err);
+                            if (err.name == 'ConditionalCheckFailedException') reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
+                            else reject(err);
                         } else {
                             if (data && data.Attributes) {
                                 data.Attributes._id = data.Attributes._sk_id;
@@ -951,13 +959,15 @@ export class Partition {
             return this.updateOne(query, object);
         } else {
             let options = {
-                limit : 25,
                 keys : { _id : 1 }
             }
+
             return this.find(query, options).then(
                 (res) => {
                     res = res.filter(item => item._id != undefined);
                     if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot delete nothing');
+
+                    let promises = [];
 
                     let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
                         RequestItems : {},
@@ -1024,6 +1034,12 @@ export class Partition {
             }
         }
 
+        let exp = new FilterExpression();
+        exp = exp.build(query);
+        params.ConditionExpression = exp.FilterExpression;
+        params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+        params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+
         return new Promise(
             (resolve, reject) => {
                 find.then((id) => {
@@ -1033,7 +1049,8 @@ export class Partition {
                         params.Key._sk_id = id;
                         this.dynamo.delete(params, (err, data) => {
                             if (err) {
-                                reject(err);
+                                if (err.name == 'ConditionalCheckFailedException') reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
+                                else reject(err);
                             } else {
                                 resolve({
                                     ok : 1 ,

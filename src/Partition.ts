@@ -242,18 +242,23 @@ export class Partition {
                         }
                     }
                 )
+
+                if (!upsert) {
+                    let exp : Expression = new Expression();
+                    exp = exp.build(query);
+                    params.ConditionExpression = exp.Expression;
+                    params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+                    params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+                }
+
             } else {
                 throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : you must specify query keys');
             }
         }
 
-        if (!upsert && Object.keys(query).length > 0) {
-            let exp : Expression = new Expression();
-            exp = exp.build(query);
-            params.ConditionExpression = exp.Expression;
-            params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
-            params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
-        }
+        delete object['_id'];
+        delete object['_sk_id'];
+        delete object['_pk_className'];
 
         params.UpdateExpression = Expression.getUpdateExpression(object, params);
         
@@ -266,20 +271,20 @@ export class Partition {
                     //console.log('UPDATE PARAMS', params);
                     this.dynamo.update(params, (err, data) => {
                         if (err) {
-                            if (err.name == 'ConditionalCheckFailedException') reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
-                            else reject(err);
+                            if (err.name == 'ConditionalCheckFailedException') {
+                                resolve({ ok : 1, n : 0, nModified : 0, value : null});
+                                //reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
+                            }
+                            reject(err);
                         } else {
                             if (data && data.Attributes) {
                                 data.Attributes._id = data.Attributes._sk_id;
                                 delete data.Attributes._pk_className;
                                 delete data.Attributes._sk_id;
+                                resolve({ ok : 1, n : 1, nModified : 1, value : data.Attributes });
+                            } else {
+                                resolve({ ok : 1, n : 1, nModified : 1, value : null });
                             }
-                            resolve({
-                                ok : 1,
-                                n : 1,
-                                nModified : 1,
-                                value : data.Attributes
-                            });
                         }
                     });
                 });
@@ -288,11 +293,11 @@ export class Partition {
     }
 
     upsertOne(query = {}, object : Object) : Promise {
-        return this.updateOne(query, object);
+        return this.updateOne(query, object, true);
     }
 
     updateMany(query = {}, object) : Promise {
-        let id = query['_id'] || object['_id'];
+        let id = query['_id'];
 
         if (id) {
             return this.updateOne(query, object);
@@ -306,37 +311,17 @@ export class Partition {
                     res = res.filter(item => item._id != undefined);
                     if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot delete nothing');
 
-                    let promises = [];
-
-                    let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
-                        RequestItems : {},
-                    }
-
-                    params.RequestItems[this.database] = res.map(item => {
-                        return {
-                            PutRequest : {
-                                Item : {
-                                    _pk_className : this.className,
-                                    _sk_id : item._id,
-                                    _id : item._id,
-                                    ...object
-                                }
-                            }
-                        }
-                    });
+                    let promises = res.map(
+                        item => this.updateOne({ _id : item._id }, object)
+                    );
 
                     return new Promise(
                         (resolve, reject) => {
-                            this.dynamo.batchWrite(params, (err, data) => {
-                                if (err) {
-                                    reject(err)
-                                } else {
-                                    resolve({
-                                        ok : 1,
-                                        n : (res || []).length
-                                    });
-                                }
-                            });
+                            Promise.all(promises).then(
+                                res => resolve({ ok : 1, n : 1, nModified : 1, value : res.length })
+                            ).catch(
+                                err => reject(err)
+                            );
                         }
                     )
                 }
@@ -388,14 +373,14 @@ export class Partition {
                         params.Key._sk_id = id;
                         this.dynamo.delete(params, (err, data) => {
                             if (err) {
-                                if (err.name == 'ConditionalCheckFailedException') reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
-                                else reject(err);
+                                if (err.name == 'ConditionalCheckFailedException') {
+                                    //reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
+                                    resolve({ ok : 1, n : 0, deletedCount : 0 })
+                                } else {
+                                    reject(err);
+                                }
                             } else {
-                                resolve({
-                                    ok : 1 ,
-                                    n : 1,
-                                    deletedCount : 1
-                                })
+                                resolve({ ok : 1, n : 1, deletedCount : 1 })
                             }
                         });
                     }
@@ -419,34 +404,17 @@ export class Partition {
                     res = res.filter(item => item._id != undefined);
                     if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot delete nothing');
 
-                    let params : DynamoDB.DocumentClient.BatchWriteItemInput = {
-                        RequestItems : {}
-                    }
-
-                    params.RequestItems[this.database] = res.map(item => {
-                        return {
-                            DeleteRequest : {
-                                Key : {
-                                    _pk_className : this.className,
-                                    _sk_id : item._id
-                                }
-                            }
-                        }
-                    });
-
+                    let promises = res.map(
+                        item => this.deleteOne({ _id : item._id })
+                    );
+                    
                     return new Promise(
                         (resolve, reject) => {
-                            this.dynamo.batchWrite(params, (err, data) => {
-                                if (err) {
-                                    reject(err)
-                                } else {
-                                    resolve({
-                                        ok : 1,
-                                        n : (res || []).length,
-                                        deletedCount : (res || []).length
-                                    });
-                                }
-                            });
+                            Promise.all(promises).then(
+                                res => resolve({ ok : 1, n : 1, nModified : 1, value : res.length })
+                            ).catch(
+                                err => reject(err)
+                            );
                         }
                     )
                 }

@@ -197,8 +197,6 @@ export class Adapter {
                     promise = this.service.deleteTable({ TableName : this.database }).promise();
                 }
 
-                
-
                 promise.then(() => {
                     return Promise.delay(100);
                 }).catch(() => {

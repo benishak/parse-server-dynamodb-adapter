@@ -2,11 +2,10 @@
 import { suite, context, test, slow, timeout } from 'mocha-typescript';
 import { should, expect, assert } from 'chai';
 import { DynamoDB as DAdapter } from '../src/';
-import { Partition  } from '../src/DynamoPartition';
-import { Adapter } from '../src/DynamoAdapter';
+import { Adapter } from '../src/Adapter';
+import { Partition } from '../src/Partition';
 import { DynamoDB } from 'aws-sdk';
-import { mongoSchemaToParseSchema } from '../src/SchemaPartition';
-import { generate as randomString } from 'randomstring';
+import { newObjectId } from 'parse-server/lib/cryptoUtils';
 import * as Promise from 'bluebird';
 
 const AWS = require('aws-sdk-mock');
@@ -108,8 +107,8 @@ const $ = DDB.getAdapter();
 
     @test 'handles object and subdocument'(done) {
         const schema = { objectId: { type : 'String' }, fields : { subdoc: { type: 'Object' } } };
-        const objectId = randomString(10);
-        const className = randomString(7);
+        const objectId = newObjectId();
+        const className = 'MyClass';
 
         const obj = { 
             objectId: objectId,
@@ -149,8 +148,8 @@ const $ = DDB.getAdapter();
 
     @test 'handles creating an array, object, date, file'(done) {
         const adapter = $;
-        const objectId = randomString(10);
-        const className = randomString(7);
+        const objectId = newObjectId();
+        const className = 'MyClass';
 
         const obj = {
             objectId : objectId,
@@ -203,8 +202,8 @@ const $ = DDB.getAdapter();
 
     @test 'handles updating a single object with array, object, date'(done) {
         const adapter = $;
-        const objectId = randomString(10);
-        const className = randomString(7);
+        const objectId = newObjectId();
+        const className = 'MyClass';
 
         const schema = {
             fields: {

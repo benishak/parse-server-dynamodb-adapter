@@ -1,7 +1,6 @@
 // mocking parse-server/src/Adapters/Storage/Mongo/MongoSchemaCollection.js
-import { DynamoDB } from 'aws-sdk';
 import * as Promise from 'bluebird';
-import { Partition } from './DynamoPartition';
+import { Partition } from './Partition';
 import * as MongoTransform from 'parse-server/lib/Adapters/Storage/Mongo/MongoTransform';
 
 const nonFieldSchemaKeys = ['_id', '_metadata', '_client_permissions'];
@@ -132,13 +131,13 @@ export class SchemaPartition extends Partition {
         return this.deleteOne({ _id : name });
     }
 
-    updateSchema(name: string, query: Object, update: Object) : Promise {
+    updateSchema(name: string, query: Object, update: Object, upsert = false) : Promise {
         let _query = _mongoSchemaQueryFromNameQuery(name, query);
-        return this.updateOne(_query, update);
+        return this.updateOne(_query, update, upsert);
     }
 
     upsertSchema(name: string, query: Object, update: Object) : Promise {
-        return this.updateSchema(name, query, update);
+        return this.updateSchema(name, query, update, true);
     }
 
     addFieldIfNotExists(className: string, fieldName: string, type: sType) : Promise {

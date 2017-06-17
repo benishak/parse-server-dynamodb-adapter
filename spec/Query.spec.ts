@@ -1,10 +1,8 @@
 /// <reference path="../node_modules/mocha-typescript/globals.d.ts" />
 import { suite, test, slow, timeout } from 'mocha-typescript';
 import { should, expect, assert } from 'chai';
-import { DynamoDB as DAdapter } from '../src/';
-import { Partition, FilterExpression as Query } from '../src/DynamoPartition';
-import { Adapter } from '../src/DynamoAdapter';
-import { DynamoDB } from 'aws-sdk';
+import { Partition } from '../src/Partition';
+import { Expression as Query } from '../src/Expression';
 
 const AWS = require('aws-sdk-mock');
 
@@ -16,7 +14,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate simple expression from key : foo'() {
         let exp = new Query();
-        let text = exp.createExp('foo', 'bar', '=');
+        let text = exp.createExpression('foo', 'bar', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foo_0');
         expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
@@ -26,7 +24,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate expression from nested key : foo.bar'() {
         let exp = new Query();
-        let text = exp.createExp('foo.bar', 'foobar', '=');
+        let text = exp.createExpression('foo.bar', 'foobar', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':bar_0');
@@ -38,7 +36,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate expression from nested key : foo.bar.foobar'() {
         let exp = new Query();
-        let text = exp.createExp('foo.bar.foobar', 'foobar', '=');
+        let text = exp.createExpression('foo.bar.foobar', 'foobar', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foobar_0');
@@ -50,7 +48,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate expression from list element : foo[0]'() {
         let exp = new Query();
-        let text = exp.createExp('foo[0]', 'bar', '=');
+        let text = exp.createExpression('foo[0]', 'bar', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foo_0');
         expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
@@ -60,7 +58,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate expression from list element : foo[0][1]'() {
         let exp = new Query();
-        let text = exp.createExp('foo[0][1]', 'bar', '=');
+        let text = exp.createExpression('foo[0][1]', 'bar', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foo_0');
         expect(exp.ExpressionAttributeNames['#foo']).to.be.equal('foo');
@@ -70,7 +68,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate expression of nested list element : foo.bar[0]'() {
         let exp = new Query();
-        let text = exp.createExp('foo.bar[0]', 'foobar', '=');
+        let text = exp.createExpression('foo.bar[0]', 'foobar', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':bar_0');
@@ -82,7 +80,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate expression of nested list elements : foo[0].bar[0]'() {
         let exp = new Query();
-        let text = exp.createExp('foo[0].bar[0]', 'foobar', '=');
+        let text = exp.createExpression('foo[0].bar[0]', 'foobar', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':bar_0');
@@ -94,7 +92,7 @@ const __ops2 = ['$exists'];
 
     @test 'can generate expression of mixed nested list elements : foo[0][1].bar[0].foobar[2]'() {
         let exp = new Query();
-        let text = exp.createExp('_foo[0][1].__bar[0].foobar[2]', '123', '=');
+        let text = exp.createExpression('_foo[0][1].__bar[0].foobar[2]', '123', '=');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#foo');
         expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#bar');
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':foobar_0');
@@ -102,185 +100,6 @@ const __ops2 = ['$exists'];
         expect(exp.ExpressionAttributeNames['#bar']).to.be.equal('__bar');
         expect(exp.ExpressionAttributeValues[':foobar_0']).to.be.equal('123');
         expect(text).to.be.equal('#foo[0][1].#bar[0].#foobar[2] = :foobar_0');
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should generate simple query of _id'() {
-        let exp = new Query();
-        exp.buildKC({
-            _id : "abc"
-        });
-
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
-        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
-        expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':id_0');
-        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
-        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal('abc');
-        expect(exp.KeyConditionExpression).to.be.equal('#id = :id_0');
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should generate single query of _id'() {
-        __ops0.forEach(
-            op => {
-                let exp = new Query();
-                exp.buildKC({ 
-                    _id : {
-                        [op] : 123
-                    }
-                });
-                
-                expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
-                expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(1);
-                expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
-                expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':id_0');
-                expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
-                expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(123);
-                expect(exp.KeyConditionExpression).to.be.equal(
-                    '#id [op] :id_0'.replace('[op]', exp.comperators[op])
-                )
-            }
-        )
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should throw error single query of _id with $not'() {
-        __ops0.forEach(
-            op => {
-                let exp = new Query();
-                expect(exp.buildKC.bind(exp, {
-                    _id : {
-                        $not : { [op] : 123 }
-                    }
-                })).to.throw();
-            }
-        )
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should generate $and query of _id'() {
-        let exp = new Query();
-        exp.build({
-            $and : [
-                { _id : 123 },
-                { _id : 111 },
-                { _id : 666 },
-                { id : 500 },
-                { 'item.id' : 0 },
-                { 'item[0].user.id' : 'abc' },
-                { 'item[0].user.id[1]' : 'abc' }
-            ]
-        });
-
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(4);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(7);
-        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
-        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
-        expect(exp.FilterExpression).to.be.equal(
-            '#id = :id_0 AND #id = :id_1 AND #id = :id_2 AND #id_1 = :id_1_1 AND #item.#id_1 = :id_4 AND #item[0].#user.#id_1 = :id_5 AND #item[0].#user.#id_1[1] = :id_6'
-        );
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should throw error when using $and query of _id with $not'() {
-        let exp = new Query();
-        expect(exp.buildKC.bind(exp, {
-            $and : [
-                { _id : { $not : { $eq : 123 } } },
-                { _id : { $not : { $eq : 111 } } }
-            ]
-        })).to.throw();
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should throw error $or query of _id'() {
-        let exp = new Query();
-        expect(exp.buildKC.bind(exp, {
-            $or : [
-                { _id : 123 },
-                { _id : 111 }
-            ]
-        })).to.throw();
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should generate range query _id'() {
-        let exp = new Query();
-        exp.buildKC({
-            _id : {
-                $gt : 1000,
-                $lt : 2000
-            }
-        });
-
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
-        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
-        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
-        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(1000);
-        expect(exp.ExpressionAttributeValues[':id_1']).to.be.equal(2000);
-        expect((exp.KeyConditionExpression.match(/AND/g) || []).length).to.be.equal(1);
-        expect(exp.KeyConditionExpression).to.be.equal(
-            '#id > :id_0 AND #id < :id_1'
-        );
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should throw error select query _id with $in'() {
-        let exp = new Query();
-        expect(exp.buildKC.bind(exp, {
-            _id : { $in : [1000, 2000] }
-        })).to.throw();
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should throw error select query _id with $nin'() {
-        let exp = new Query();
-        expect(exp.buildKC.bind(exp, {
-            _id : { $nin : [1000, 2000] }
-        })).to.throw();
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should throw error select query _id with $not and $in'() {
-        let exp = new Query();
-        expect(exp.buildKC.bind(exp, {
-            _id : { $not : { $in : [1000, 2000] } }
-        })).to.throw();
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should generate complex query on _id'() {
-        let exp = new Query();
-        exp.buildKC({
-            _id : {
-                $gt : 1000,
-                $lt : 2000
-            }
-        });
-
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
-        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
-        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
-        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(1000);
-        expect(exp.ExpressionAttributeValues[':id_1']).to.be.equal(2000);
-        expect((exp.KeyConditionExpression.match(/AND/g) || []).length).to.be.equal(1);
-        expect(exp.KeyConditionExpression).to.be.equal(
-            '#id > :id_0 AND #id < :id_1'
-        );
-    }
-
-    @test 'DynamoDB KeyConditionrExpression : should ignore other keys in query'() {
-        let exp = new Query();
-        exp.buildKC({
-            _id : {
-                $gt : 1000,
-                $lt : 2000
-            },
-            name : 'alfred'
-        });
-
-        expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(1);
-        expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(2);
-        expect(exp.ExpressionAttributeNames).to.haveOwnProperty('#id');
-        expect(exp.ExpressionAttributeNames['#id']).to.be.equal('_id');
-        expect(exp.ExpressionAttributeValues[':id_0']).to.be.equal(1000);
-        expect(exp.ExpressionAttributeValues[':id_1']).to.be.equal(2000);
-        expect((exp.KeyConditionExpression.match(/AND/g) || []).length).to.be.equal(1);
-        expect(exp.KeyConditionExpression).to.be.equal(
-            '#id > :id_0 AND #id < :id_1'
-        );
     }
 
     @test 'DynamoDB FilterExpression : should generate simple query with single key'() {
@@ -295,7 +114,7 @@ const __ops2 = ['$exists'];
         expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':string_0');
         expect(exp.ExpressionAttributeNames['#string']).to.be.equal('string');
         expect(exp.ExpressionAttributeValues[':string_0']).to.be.equal('abc');
-        expect(exp.FilterExpression).to.be.equal('#string = :string_0');
+        expect(exp.Expression).to.be.equal('#string = :string_0');
     }
 
     @test 'DynamoDB FilterExpression : should generate single query with single key'() {
@@ -314,7 +133,7 @@ const __ops2 = ['$exists'];
                 expect(exp.ExpressionAttributeValues).to.haveOwnProperty(':field_0');
                 expect(exp.ExpressionAttributeNames['#field']).to.be.equal('field');
                 expect(exp.ExpressionAttributeValues[':field_0']).to.be.equal(1);
-                expect(exp.FilterExpression).to.be.equal(
+                expect(exp.Expression).to.be.equal(
                     '#field [op] :field_0'.replace('[op]', exp.comperators[op])
                 )
             }
@@ -338,8 +157,8 @@ const __ops2 = ['$exists'];
         expect(exp.ExpressionAttributeNames['#balance']).to.be.equal('balance');
         expect(exp.ExpressionAttributeValues[':balance_0']).to.be.equal(1000);
         expect(exp.ExpressionAttributeValues[':balance_1']).to.be.equal(2000);
-        expect((exp.FilterExpression.match(/AND/g) || []).length).to.be.equal(1);
-        expect(exp.FilterExpression).to.be.equal(
+        expect((exp.Expression.match(/AND/g) || []).length).to.be.equal(1);
+        expect(exp.Expression).to.be.equal(
             '#balance > :balance_0 AND #balance < :balance_1'
         );
     }
@@ -359,8 +178,8 @@ const __ops2 = ['$exists'];
         expect(exp.ExpressionAttributeNames['#balance']).to.be.equal('balance');
         expect(exp.ExpressionAttributeValues[':balance_0']).to.be.equal(1000);
         expect(exp.ExpressionAttributeValues[':balance_1']).to.be.equal(2000);
-        expect((exp.FilterExpression.match(/AND/g) || []).length).to.be.equal(1);
-        expect(exp.FilterExpression).to.be.equal(
+        expect((exp.Expression.match(/AND/g) || []).length).to.be.equal(1);
+        expect(exp.Expression).to.be.equal(
             '#balance > :balance_0 AND #balance < :balance_1'
         );
     }
@@ -384,7 +203,7 @@ const __ops2 = ['$exists'];
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(2);
         expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(4);
-        expect(exp.FilterExpression).to.be.equal(
+        expect(exp.Expression).to.be.equal(
             '( #balance > :balance_0 OR #balance < :balance_1 ) AND ( #quantity <> :quantity_0 OR #quantity <> :quantity_1 )'
         );
     }
@@ -400,8 +219,8 @@ const __ops2 = ['$exists'];
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.be.equal(3);
         expect(Object.keys(exp.ExpressionAttributeValues).length).to.be.equal(4);
-        expect((exp.FilterExpression.match(/AND/g) || []).length).to.be.equal(3);
-        expect(exp.FilterExpression).to.be.equal(
+        expect((exp.Expression.match(/AND/g) || []).length).to.be.equal(3);
+        expect(exp.Expression).to.be.equal(
             '#balance > :balance_0 AND #balance < :balance_1 AND #quantity = :quantity_0 AND #product = :product_0'
         );
     }
@@ -428,8 +247,8 @@ const __ops2 = ['$exists'];
         expect(Object.keys(exp.ExpressionAttributeValues).sort().join()).to.be.equal(
             [':string_0',':number_0',':object_0',':array_0',':double_0',':date_0'].sort().join()
         )
-        expect((exp.FilterExpression.match(/AND/g) || []).length).to.be.equal(5);
-        expect(exp.FilterExpression).to.be.equal(
+        expect((exp.Expression.match(/AND/g) || []).length).to.be.equal(5);
+        expect(exp.Expression).to.be.equal(
             '#string [op] :string_0 AND #number [op] :number_0 AND #date [op] :date_0 AND #double [op] :double_0 AND #array = :array_0 AND #object = :object_0'.replace(/\[op\]/g, '=')
         )
     }
@@ -470,8 +289,8 @@ const __ops2 = ['$exists'];
                 expect(Object.keys(exp.ExpressionAttributeValues).sort().join()).to.be.equal(
                     [':string_0',':number_0',':object_0',':array_0',':double_0',':date_0'].sort().join()
                 )
-                expect((exp.FilterExpression.match(/AND/g) || []).length).to.be.equal(5);
-                expect(exp.FilterExpression).to.be.equal(
+                expect((exp.Expression.match(/AND/g) || []).length).to.be.equal(5);
+                expect(exp.Expression).to.be.equal(
                     '#string [op] :string_0 AND #number [op] :number_0 AND #date [op] :date_0 AND #double [op] :double_0 AND #array = :array_0 AND #object = :object_0'.replace(/\[op\]/g, exp.comperators[op])
                 )
             }
@@ -493,7 +312,7 @@ const __ops2 = ['$exists'];
         expect(exp.ExpressionAttributeValues[':balance_1']).to.be.equal(5000);
         expect(exp.ExpressionAttributeValues[':balance_2']).to.be.equal(2000);
         expect(exp.ExpressionAttributeValues[':balance_3']).to.be.equal(0);
-        expect(exp.FilterExpression).to.be.equal(
+        expect(exp.Expression).to.be.equal(
             '( #balance > :balance_0 AND #balance <> :balance_1 ) OR ( #balance < :balance_2 AND #balance <> :balance_3 )'
         );
     }
@@ -524,7 +343,7 @@ const __ops2 = ['$exists'];
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(6);
         expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(10);
-        expect(exp.FilterExpression).to.equal(
+        expect(exp.Expression).to.equal(
             '#balance > :balance_0 AND #balance < :balance_1 OR #quantity <> :quantity_0 AND #quantity <> :quantity_1 AND #product IN (:product_0_0,:product_0_1) AND NOT ( #stat IN (:stat_0_0,:stat_0_1) ) AND #author = :author_0 AND ( #stars = :stars_0 OR attribute_not_exists(#stars) )'
         );
     }
@@ -537,7 +356,7 @@ const __ops2 = ['$exists'];
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(2);
         expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(4);
         expect(exp.ExpressionAttributeValues[':null']).to.equal(null);
-        expect(exp.FilterExpression).to.equal(
+        expect(exp.Expression).to.equal(
             '#p_user = :p_user_0 AND ( contains(#rperm,:rperm_0_0) OR contains(#rperm,:rperm_0_1) OR attribute_not_exists(#rperm) OR #rperm = :null )'
         );
     }
@@ -550,7 +369,7 @@ const __ops2 = ['$exists'];
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(2);
         expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(6);
         expect(exp.ExpressionAttributeValues[':null']).to.equal(null);
-        expect(exp.FilterExpression).to.equal(
+        expect(exp.Expression).to.equal(
             '#id = :id_0 AND NOT ( #id IN (:id_1_0,:id_1_1) ) AND ( contains(#rperm,:rperm_0_0) OR contains(#rperm,:rperm_0_1) OR attribute_not_exists(#rperm) OR #rperm = :null )'
         );
     }
@@ -570,7 +389,7 @@ const __ops2 = ['$exists'];
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(1);
         expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(7);
-        expect(exp.FilterExpression).to.equal(
+        expect(exp.Expression).to.equal(
             '#id IN (:id_0_0,:id_0_1,:id_0_2,:id_0_3,:id_0_4) AND NOT ( #id IN (:id_5_0,:id_5_1) )'
         );
     }
@@ -581,15 +400,14 @@ const __ops2 = ['$exists'];
 
         expect(Object.keys(exp.ExpressionAttributeNames).length).to.equal(1);
         expect(Object.keys(exp.ExpressionAttributeValues).length).to.equal(3);
-        expect(exp.FilterExpression).to.equal(
+        expect(exp.Expression).to.equal(
             '( contains(#numbers,:numbers_0_0) AND contains(#numbers,:numbers_0_1) AND contains(#numbers,:numbers_0_2) )'
         );
     }
 
     @test 'DynamoDB UpdateExpression : set one attribute'() {
-        let partition = new Partition('test', 'test', new DynamoDB());
         let params = {};
-        let exp = partition._getUpdateExpression({
+        let exp = Query.getUpdateExpression({
             foo : 'bar'
         }, params);
         let vl = Object.keys(params['ExpressionAttributeValues'])[0];
@@ -597,7 +415,7 @@ const __ops2 = ['$exists'];
         expect(exp).to.be.equal('SET #foo = ' + vl);
 
         params = {};
-        exp = partition._getUpdateExpression({
+        exp = Query.getUpdateExpression({
             $set : {
                 foo : 'bar'
             }
@@ -608,9 +426,8 @@ const __ops2 = ['$exists'];
     }
 
     @test 'DynamoDB UpdateExpression : inc one attribute'() {
-        let partition = new Partition('test', 'test', new DynamoDB());
         let params = {};
-        let exp = partition._getUpdateExpression({
+        let exp = Query.getUpdateExpression({
             $inc : {
                 foo : 1
             }

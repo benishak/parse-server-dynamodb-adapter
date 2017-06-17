@@ -1,9 +1,11 @@
-import { Partition, FilterExpression } from './DynamoPartition';
-import { Adapter } from './DynamoAdapter';
+import { Partition } from './Partition';
+import { Expression } from './Expression';
+import { Adapter } from './Adapter';
 
 export class DynamoDB {
+
     Partition;
-    Query;
+    Expression;
 
     Adapter : Adapter;
 
@@ -11,7 +13,7 @@ export class DynamoDB {
         this.database = database;
         this.settings = settings;
         this.Partition = Partition;
-        this.Query = FilterExpression;
+        this.Expression = Expression;
     }
 
     getAdapter() {

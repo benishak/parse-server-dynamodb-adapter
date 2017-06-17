@@ -1,7 +1,7 @@
 import { DynamoDB } from 'aws-sdk';
 import * as Promise from 'bluebird';
 import * as Transform from 'parse-server/lib/Adapters/Storage/Mongo/MongoTransform';
-import { Partition } from './DynamoPartition';
+import { Partition } from './Partition';
 import { SchemaPartition, mongoSchemaToParseSchema, parseFieldTypeToMongoFieldType } from './SchemaPartition';
 import { Parse } from 'parse/node';
 import { _ } from 'lodash';
@@ -187,10 +187,10 @@ export class Adapter {
             TableName: this.database
         };
 
-        let exec = require('child_process').execSync
         return new Promise((resolve, reject) => {
-            let promise;
             this.service.describeTable({ TableName : this.database }, (err, data) => {
+                let promise;
+
                 if (err) {
                     promise = Promise.resolve();
                 } else {
@@ -321,7 +321,7 @@ export class Adapter {
             );
     }
 
-    findOneAndUpdate(className, schema, query, update) {
+    findOneAndUpdate(className, schema, query, update, upsert = false) {
         update = this.transformDateObject(update);
         schema = Transform.convertParseSchemaToMongoSchema(schema);
         update = Transform.transformUpdate(className, update, schema);
@@ -329,7 +329,7 @@ export class Adapter {
         query = Transform.transformWhere(className, query, schema);
         query = this.transformDateObject(query);
 
-        return this._adaptiveCollection(className).updateOne(query, update)
+        return this._adaptiveCollection(className).updateOne(query, update, upsert)
             .then(result => Transform.mongoObjectToParseObject(className, result.value, schema))
             .catch(
                 error => { throw error }
@@ -337,7 +337,7 @@ export class Adapter {
     }
 
     upsertOneObject(className, schema, query, update) {
-        return this.findOneAndUpdate(className, schema, query, update);
+        return this.findOneAndUpdate(className, schema, query, update, true);
     }
 
     find(className, schema = {}, query = {}, options : Options = {}) {

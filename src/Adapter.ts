@@ -14,7 +14,7 @@ type Options = {
     count?: boolean
 }
 
-const schemaTable = '_SCHEMA';
+const schemaPartition = '_SCHEMA';
 
 // not used at the moment but can be helpful in the future!
 const DynamoType = type => {
@@ -96,7 +96,7 @@ export class Adapter {
     }
 
     _schemaCollection() : SchemaPartition {
-        return new SchemaPartition(this.database, schemaTable, this.service);
+        return new SchemaPartition(this.database, schemaPartition, this.service);
     }
 
     classExists(name : string) : Promise {

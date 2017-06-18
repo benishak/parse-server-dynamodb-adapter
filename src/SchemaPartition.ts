@@ -113,15 +113,15 @@ export class SchemaPartition extends Partition {
         );
     }
 
-    _fechOneSchemaFrom_SCHEMA(name: string) : Promise {
+    _fetchOneSchemaFrom_SCHEMA(name: string) : Promise {
         let query = _mongoSchemaQueryFromNameQuery(name);
         
         return this.find(query, { limit: 1 }).then(
             result => {
-                if (result) {
-                    return mongoSchemaToParseSchema(result);
+                if (result.length === 1) {
+                    return mongoSchemaToParseSchema(result[0]);
                 } else {
-                    return [];
+                    throw undefined;
                 }
             }
         );
@@ -131,13 +131,13 @@ export class SchemaPartition extends Partition {
         return this.deleteOne({ _id : name });
     }
 
-    updateSchema(name: string, query: Object, update: Object, upsert = false) : Promise {
-        let _query = _mongoSchemaQueryFromNameQuery(name, query);
-        return this.updateOne(_query, update, upsert);
+    updateSchema(name: string, update: Object) : Promise {
+        let _query = _mongoSchemaQueryFromNameQuery(name);
+        return this.updateOne(_mongoSchemaQueryFromNameQuery(name), update);
     }
 
     upsertSchema(name: string, query: Object, update: Object) : Promise {
-        return this.updateSchema(name, query, update, true);
+        return this.upsertOne(_mongoSchemaQueryFromNameQuery(name, query), update);
     }
 
     addFieldIfNotExists(className: string, fieldName: string, type: sType) : Promise {
@@ -145,6 +145,6 @@ export class SchemaPartition extends Partition {
             className,
             { [fieldName]: { '$exists': false } },
             { '$set' : { [fieldName]: parseFieldTypeToMongoFieldType(type) } }
-        );  
+        );
     }
 }

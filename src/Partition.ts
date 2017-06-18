@@ -214,9 +214,11 @@ export class Partition {
         )
     }
 
+    // update in DynamoDB is upsert by default but if used with ConditionExpression, it will fail
+    // if upsert is true, try to find the item 
     updateOne(query = {}, object : Object, upsert = false) : Promise {
         //console.log('UPDATE', query, object);
-        let id = query['_id'] || object['_id'];
+        let id = query['_id'];
         
         let params : DynamoDB.DocumentClient.UpdateItemInput = {
             TableName : this.database,
@@ -229,64 +231,78 @@ export class Partition {
         let find = Promise.resolve();
 
         if (id) {
-            find = Promise.resolve(id);
+            query['_sk_id'] = id;
+            find = this._get(id, ['_sk_id', '_id']).then(
+                result => {
+                    if (result.length > 0 && result[0]._id === id) {
+                        return result[0]._id;
+                    }
+                    return null;
+                }
+            );
         } else {
             if (Object.keys(query).length > 0) {
                 find = this.find(query, { limit : 1 }).then(
                     results => {
                         if (results.length > 0 && results[0]._id) {
                             return results[0]._id;
-                        } else {
-                            // create new object if not exist
-                            return newObjectId();
                         }
+                        return null;
                     }
                 )
-
-                if (!upsert) {
-                    let exp : Expression = new Expression();
-                    exp = exp.build(query);
-                    params.ConditionExpression = exp.Expression;
-                    params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
-                    params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
-                }
-
             } else {
                 throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : you must specify query keys');
             }
         }
-
-        delete object['_id'];
-        delete object['_sk_id'];
-        delete object['_pk_className'];
+        
+        let exp : Expression = new Expression();
+        exp = exp.build(query);
+        params.ConditionExpression = exp.Expression;
+        params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+        params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
 
         params.UpdateExpression = Expression.getUpdateExpression(object, params);
-        
-        object = null; // destroy object;
 
         return new Promise(
             (resolve, reject) => {
                 find.then((id) => {
-                    params.Key._sk_id = id;
-                    //console.log('UPDATE PARAMS', params);
-                    this.dynamo.update(params, (err, data) => {
-                        if (err) {
-                            if (err.name == 'ConditionalCheckFailedException') {
-                                resolve({ ok : 1, n : 0, nModified : 0, value : null});
-                                //reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
-                            }
-                            reject(err);
-                        } else {
-                            if (data && data.Attributes) {
-                                data.Attributes._id = data.Attributes._sk_id;
-                                delete data.Attributes._pk_className;
-                                delete data.Attributes._sk_id;
-                                resolve({ ok : 1, n : 1, nModified : 1, value : data.Attributes });
+                    if (id) {
+                        params.Key._sk_id = id;
+                        //console.log('UPDATE PARAMS', params);
+                        this.dynamo.update(params, (err, data) => {
+                            if (err) {
+                                if (err.name == 'ConditionalCheckFailedException') {
+                                    resolve({ ok : 1, n : 0, nModified : 0, value : null});
+                                    //reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
+                                } else {
+                                    reject(err);
+                                }
                             } else {
-                                resolve({ ok : 1, n : 1, nModified : 1, value : null });
+                                if (data && data.Attributes) {
+                                    data.Attributes._id = data.Attributes._sk_id;
+                                    delete data.Attributes._pk_className;
+                                    delete data.Attributes._sk_id;
+                                    resolve({ ok : 1, n : 1, nModified : 1, value : data.Attributes });
+                                } else {
+                                    resolve({ ok : 1, n : 1, nModified : 1, value : null });
+                                }
                             }
+                        });
+                    } else {
+                        // here we do upserting
+                        if (upsert) {
+                            object = {
+                                ...object['$set'],
+                                ...object['$inc']
+                            }
+                            object['_id'] = newObjectId();
+                            this.insertOne(object).then(
+                                res => resolve({ ok : 1, n : 1, nModified : 1, value : res.ops[0] })
+                            );
+                        } else {
+                            resolve({ ok : 1, n : 1, nModified : 1, value : null });
                         }
-                    });
+                    }   
                 });
             }
         )
@@ -318,7 +334,16 @@ export class Partition {
                     return new Promise(
                         (resolve, reject) => {
                             Promise.all(promises).then(
-                                res => resolve({ ok : 1, n : 1, nModified : 1, value : res.length })
+                                res => {
+                                    res = res.filter(item => {
+                                        if (res.value) return res.value;
+                                    });
+                                    if (res.length > 0) {
+                                        resolve(res);
+                                    } else {
+                                        resolve(null);
+                                    }
+                                }
                             ).catch(
                                 err => reject(err)
                             );
@@ -402,7 +427,7 @@ export class Partition {
             return this.find(query, options).then(
                 (res) => {
                     res = res.filter(item => item._id != undefined);
-                    if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot delete nothing');
+                    if (res.length === 0) throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB : cannot delete nothing');
 
                     let promises = res.map(
                         item => this.deleteOne({ _id : item._id })
@@ -411,9 +436,9 @@ export class Partition {
                     return new Promise(
                         (resolve, reject) => {
                             Promise.all(promises).then(
-                                res => resolve({ ok : 1, n : 1, nModified : 1, value : res.length })
+                                res => resolve({ ok : 1, n : res.length, deletedCount : res.length })
                             ).catch(
-                                err => reject(err)
+                                err => { throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB : Internal Error'); }
                             );
                         }
                     )

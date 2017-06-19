@@ -2,6 +2,7 @@ import { DynamoDB } from 'aws-sdk';
 import * as Promise from 'bluebird';
 import * as Transform from 'parse-server/lib/Adapters/Storage/Mongo/MongoTransform';
 import { Partition } from './Partition';
+import { _Cache as Cache } from './Cache';
 import { SchemaPartition, mongoSchemaToParseSchema, parseFieldTypeToMongoFieldType } from './SchemaPartition';
 import { Parse } from 'parse/node';
 import { _ } from 'lodash';
@@ -102,17 +103,13 @@ export class Adapter {
     classExists(name : string) : Promise {
         return this._schemaCollection().find({ _id : name }).then(
             partition => partition.length > 0
-        );/*.catch(
-            error => { throw error }
-        );*/
+        );
     }
 
     setClassLevelPermissions(className, CLPs) : Promise {
         return this._schemaCollection().updateSchema(className, {
             $set: { _metadata: { class_permissions: CLPs } }
-        });//.catch(
-        //     error => { throw error }
-        // );/
+        });
     }
 
     createClass(className, schema) : Promise {
@@ -141,18 +138,12 @@ export class Adapter {
     }
 
     addFieldIfNotExists(className, fieldName, type) : Promise {
-        return this._schemaCollection().addFieldIfNotExists(className, fieldName, type)
-            // .catch(
-            //     error => { throw error }
-            // );
+        return this._schemaCollection().addFieldIfNotExists(className, fieldName, type);
     }
 
     deleteClass(className) : Promise {
         // only drop Schema!
-        return this._schemaCollection().findAndDeleteSchema(className)
-            // .catch(
-            //     error => { throw error }
-            // );
+        return this._schemaCollection().findAndDeleteSchema(className);
     }
 
     deleteAllClasses() : Promise {
@@ -184,9 +175,9 @@ export class Adapter {
             }, 
             TableName: this.database
         };
-
         return new Promise((resolve, reject) => {
             this.service.describeTable({ TableName : this.database }, (err, data) => {
+                Cache.flush();
                 let promise;
 
                 if (err) {
@@ -200,12 +191,12 @@ export class Adapter {
                 }).catch(() => {
                     return Promise.resolve();
                 }).then(() => {
-                    return this.service.createTable(params, (err, data) => {
+                    this.service.createTable(params, (err, data) => {
                         if (err) {
-                            reject()
+                            reject();
                         } else {
                             Promise.delay(100).then(() => {
-                                resolve();
+                                resolve()
                             });
                         }
                     });
@@ -221,10 +212,7 @@ export class Adapter {
             update[field] = undefined;
         });
         
-        return this._schemaCollection().updateSchema(className, update)
-            // .catch(
-            //     error => { throw error }
-            // );
+        return this._schemaCollection().updateSchema(className, update);
     }
 
     getAllClasses() : Promise {
@@ -232,10 +220,7 @@ export class Adapter {
     }
 
     getClass(className) : Promise {
-        return this._schemaCollection()._fetchOneSchemaFrom_SCHEMA(className)
-            // .catch(
-            //     error => { throw error }
-            // );
+        return this._schemaCollection()._fetchOneSchemaFrom_SCHEMA(className);
     }
 
     transformDateObject(object = {}) : Object {
@@ -271,10 +256,17 @@ export class Adapter {
         object = Transform.parseObjectToMongoObjectForCreate(className, object, schema);
         object = object = this.transformDateObject(object);
 
-        return this._adaptiveCollection(className).insertOne(object)
-            // .catch(
-            //     error => { throw error }
-            // );
+        return this._adaptiveCollection(className).ensureUniqueness(object)
+            .then(count => {
+                if (count === 0) {
+                    return this._adaptiveCollection(className).insertOne(object);
+                } else {
+                    throw new Parse.Error(Parse.Error.DUPLICATE_VALUE, 'A duplicate value for a field with unique values was provided');
+                }
+            })
+            .catch(
+                error => { throw error }
+            );
     }
 
     deleteObjectsByQuery(className, schema, query) : Promise {
@@ -306,10 +298,17 @@ export class Adapter {
         query = Transform.transformWhere(className, query, schema);
         query = this.transformDateObject(query);
 
-        return this._adaptiveCollection(className).updateMany(query, update)
-            // .catch(
-            //     error => { throw error }
-            // );
+        return this._adaptiveCollection(className).ensureUniqueness(update['$set'])
+            .then(count => {
+                if (count === 0) {
+                    return this._adaptiveCollection(className).updateMany(query, update);
+                } else {
+                    throw new Parse.Error(Parse.Error.DUPLICATE_VALUE, 'A duplicate value for a field with unique values was provided');
+                }
+            })
+            .catch(
+                error => { throw error }
+            );
     }
 
     findOneAndUpdate(className, schema, query, update, upsert = false) : Promise {
@@ -321,11 +320,18 @@ export class Adapter {
         query = Transform.transformWhere(className, query, schema);
         query = this.transformDateObject(query);
 
-        return this._adaptiveCollection(className).updateOne(query, update, upsert)
+        return this._adaptiveCollection(className).ensureUniqueness(update['$set'])
+            .then(count => {
+                if (count === 0) {
+                    return this._adaptiveCollection(className).updateOne(query, update, upsert);
+                } else {
+                    throw new Parse.Error(Parse.Error.DUPLICATE_VALUE, 'A duplicate value for a field with unique values was provided');
+                }
+            })
             .then(result => Transform.mongoObjectToParseObject(className, result.value, schema))
-            // .catch(
-            //     error => { throw error }
-            // );
+            .catch(
+                error => { throw error }
+            )
     }
 
     upsertOneObject(className, schema, query, update) {
@@ -347,21 +353,40 @@ export class Adapter {
         return this._adaptiveCollection(className).find(query, { skip, limit, sort, keys})
             .then(
                 objects => objects.map(object => Transform.mongoObjectToParseObject(className, object, schema))
-            )
-            // .catch(
-            //     error => { throw error }
-            // );
+            );
     }
 
     _rawFind(className, query = {}) : Promise {
         return this._adaptiveCollection(className).find(query)
-            // .catch(
-            //     error => { throw error }
-            // );
+            .catch(
+                error => { throw error }
+            );
     }
 
     ensureUniqueness(className, schema, fieldNames) : Promise {
-        return Promise.resolve();
+        fieldNames = fieldNames.map(fieldName => Transform.transformKey(className, fieldName, schema));
+
+        return new Promise(
+            (resolve, reject) => {
+                this._adaptiveCollection('_UNIQUE_INDEX_')
+                    .upsertOne(
+                        { _id : className },
+                        { $set : { fields : fieldNames } }
+                    ).then(
+                        res => {
+                            if (res.value) {
+                                Cache.put('UNIQUE', { [className] : fieldNames });
+                                resolve();
+                            } else {
+                                throw new Parse.Error(1, 'DynamoDB cannot create this Index');
+                            }
+                        }
+                    ).catch(
+                        error => { throw error }
+                    )
+            }
+        )
+                
     }
 
     count(className, schema, query) : Promise {
@@ -370,10 +395,7 @@ export class Adapter {
         query = Transform.transformWhere(className, query, schema);
         query = this.transformDateObject(query);
 
-        return this._adaptiveCollection(className).count(query)
-            // .catch(
-            //     error => { throw error }
-            // );
+        return this._adaptiveCollection(className).count(query);
     }
 
     performInitialization() {

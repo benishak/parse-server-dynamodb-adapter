@@ -240,7 +240,7 @@ export class Expression {
 
         switch (op) {
             case 'begins_with':
-                exp = 'begins_with([key], [value])';
+                exp = 'begins_with([key],[value])';
                 break;
             case 'attribute_exists':
                 exp = 'attribute_exists([key])';
@@ -251,7 +251,7 @@ export class Expression {
                 delete this.ExpressionAttributeValues[_vl];
                 break;
             case 'contains':
-                exp = 'contains([key], [value])';   
+                exp = 'contains([key],[value])';   
                 break;
             case 'IN':
                 let _v = this.ExpressionAttributeValues[_vl].sort();
@@ -317,7 +317,7 @@ export class Expression {
     // and returns the transformed path
     // e.g. _id -> #id
     // e.g. item.users[1].id -> #item.#users[1].#id
-    static transformPath(params : any, path : string, value : any = null) : string {
+    static transformPath(params : any, path : string, value : any = undefined) : string {
 
         if (!path) {
             throw new Error('Key cannot be empty');
@@ -329,7 +329,7 @@ export class Expression {
             params.ExpressionAttributeNames = {}
         }
 
-        if (value && !params.hasOwnProperty('ExpressionAttributeNames')) {
+        if ((!params.hasOwnProperty('ExpressionAttributeNames')) && value) {
             params.ExpressionAttributeValues = {}
         }
 
@@ -352,7 +352,7 @@ export class Expression {
                     params.ExpressionAttributeNames['#' + _k] = keys[i].replace(/\[[0-9]+\]/g, '');
                 }
 
-                if (value != null) {
+                if (value !== undefined) {
                     if (i == (keys.length - 1)) {
                         let index = $.count(params.ExpressionAttributeValues, ':' + _k);
                         _vl = ':' + _k + '_' + index;
@@ -420,14 +420,18 @@ export class Expression {
                         break;
                     case '$in':
                     case '$nin':
-                        not = q == '$nin' ? true : not;
+                        let _not_;
+                        if (q == '$nin' && not === true) _not_ = false;
+                        if (q == '$nin' && not === false) _not_ = true;
+                        if (q == '$in' && not === true) _not_ = true;
+                        if (q == '$in' && not === false) _not_ = false;
                         query[q] = query[q] || [];
                         size = query[q].length;
                         if (size === 0) query[q] = ['*']; //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [$in] cannot be empty');
                         if (size === 1) query[q] = query[q][0];
                         if (size > 100) query[q] = query[q].slice(0,99); //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : The [$in] operator is provided with too many operands, ' + size);
                         _cmp_ = size === 1 ? '=' : 'IN';
-                        exp = this.createExpression(key, query[q], _cmp_, not);
+                        exp = this.createExpression(key, query[q], _cmp_, _not_);
                         this.Expression = this.Expression.replace('[first]', exp);
                         break;
                     case '$regex':

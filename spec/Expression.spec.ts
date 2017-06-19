@@ -10,7 +10,7 @@ const __ops0 = ['$eq', '$gt', '$gte', '$lt', '$lt', '$lte'];
 const __ops1 = ['$eq', '$ne', '$gt', '$gte', '$lt', '$lt', '$lte'];
 const __ops2 = ['$exists'];
 
-@suite class DDBQuery {
+@suite class DDBExpression {
 
     @test 'can generate simple expression from key : foo'() {
         let exp = new Query();
@@ -436,4 +436,101 @@ const __ops2 = ['$exists'];
 
         expect(exp).to.be.equal('SET #foo = if_not_exists(#foo,:__zero__) + :foo_0');
     }
+
+    @test 'DynamoDB UpdateExpression : can handle $nin with other attributes'() {
+        let params = {};
+        let exp = new Query();
+        exp = exp.build({ 
+            objectId: { 
+                '$nin': [ '2ohGZeLub2', 'RGtEPnwICo' ],
+                '$in': [ 'RGtEPnwICo', '2ohGZeLub2', 'r3YPI7akbe', 'RGtEPnwICo', '2ohGZeLub2' ]
+            },
+            _rperm: { '$in': [ null, '*', 'XJbcIDTTON' ] } 
+        });
+
+        expect(exp.Expression).to.be.equal(
+            'NOT ( #objectid IN (:objectid_0_0,:objectid_0_1) ) AND #objectid IN (:objectid_2_0,:objectid_2_1,:objectid_2_2,:objectid_2_3,:objectid_2_4) AND ( contains(#rperm,:rperm_0_0) OR contains(#rperm,:rperm_0_1) OR attribute_not_exists(#rperm) OR #rperm = :null )'
+        );
+    }
+
+    @test 'DynamoDB UpdateExpression : can handle $nin with other attributes combined with $not'() {
+        let params = {};
+        let exp = new Query();
+        exp = exp.build({ 
+            objectId: {
+                '$not' : { '$nin': [ '2ohGZeLub2', 'RGtEPnwICo' ] },
+                '$in': [ 'RGtEPnwICo', '2ohGZeLub2', 'r3YPI7akbe', 'RGtEPnwICo', '2ohGZeLub2' ]
+            },
+            _rperm: { '$in': [ null, '*', 'XJbcIDTTON' ] } 
+        });
+
+        expect(exp.Expression).to.be.equal(
+            '#objectid IN (:objectid_0_0,:objectid_0_1) AND #objectid IN (:objectid_2_0,:objectid_2_1,:objectid_2_2,:objectid_2_3,:objectid_2_4) AND ( contains(#rperm,:rperm_0_0) OR contains(#rperm,:rperm_0_1) OR attribute_not_exists(#rperm) OR #rperm = :null )'
+        );
+    }
+
+    @test 'DynamoDB UpdateExpression : $or/and with one query'() {
+        let params = {};
+        let exp = new Query();
+        exp = exp.build({
+            $or : [ { _id : 10 } ]
+        });
+
+        expect(exp.Expression).to.be.equal(
+            '#id = :id_0'
+        );
+
+        exp = exp.build({
+            $and : [ { _id : 10 } ]
+        });
+
+        expect(exp.Expression).to.be.equal(
+            '#id = :id_0'
+        );
+    }
+
+    @test 'DynamoDB UpdateExpression : empty $or/$and'() {
+        let params = {};
+        let exp = new Query();
+        exp = exp.build({
+            $or : []
+        });
+
+        expect(exp.Expression).to.be.equal(
+            '[first]'
+        );
+
+        exp = exp.build({
+            $and : []
+        });
+
+        expect(exp.Expression).to.be.equal(
+            '[first]'
+        );
+
+        exp = exp.build({
+            $and : [
+                {
+                    $or : []
+                }
+            ]
+        });
+
+        expect(exp.Expression).to.be.equal(
+            '[first]'
+        );
+
+        exp = exp.build({
+            $or : [
+                {
+                    $and : []
+                }
+            ]
+        });
+
+        expect(exp.Expression).to.be.equal(
+            '[first]'
+        );
+    }
+
 }

@@ -6,7 +6,9 @@ import * as Promise from 'bluebird';
 import { Parse } from 'parse/node';
 import { newObjectId } from 'parse-server/lib/cryptoUtils';
 import { Expression } from './Expression';
+import { _Cache as Cache } from './Cache';
 import { $ } from './helpers';
+import { _ } from 'lodash';
 
 var u = require('util'); // for debugging;
 
@@ -119,11 +121,13 @@ export class Partition {
                         
                             let exp : Expression = new Expression();
                             exp = exp.build(query);
-                            _params.FilterExpression = exp.Expression;
-                            _params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
-                            _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
-                            _params.ExpressionAttributeNames['#className'] = '_pk_className';
-                            _params.ExpressionAttributeValues[':className'] = this.className;
+                            if (exp.Expression != '[first]') {
+                                _params.FilterExpression = exp.Expression;
+                                _params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
+                                _params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
+                                _params.ExpressionAttributeNames['#className'] = '_pk_className';
+                                _params.ExpressionAttributeValues[':className'] = this.className;
+                            }
                         }
 
                         if (descending) {
@@ -170,12 +174,11 @@ export class Partition {
 
     find(query: Object = {}, options : Options = {}) : Promise {
         let id = query['_id'];
-        if (id && typeof id === 'string' && !query.hasOwnProperty('_rperm') && !query.hasOwnProperty('acl')) {
+        if (id && typeof id === 'string' && !(query.hasOwnProperty('_rperm') || query.hasOwnProperty('acl'))) {
             let _keys = options.keys || {};
             let keys = Object.keys(_keys);
             return this._get(id, keys);
         }
-        delete query['_id']; // in case of malformated query
         return this._query(query, options);
     }
 
@@ -184,8 +187,65 @@ export class Partition {
         return this._query(query, options);
     }
 
+    ensureUniqueness(object) : Promise {
+        if (Object.keys(object || {}).length > 0 && Cache.get('UNIQUE')) {
+            return Cache.get('UNIQUE', this.className).then(value => {
+                if (value) {
+                    return Promise.resolve(value);
+                } else {
+                    return this.relaodUniques();
+                }
+            }).then(uniques => {
+                if (uniques.length > 0) {
+                    uniques = _.intersection(uniques, Object.keys(object));
+                    if (uniques.length > 0) {
+                        return this.count({
+                            $or : uniques.map(key => {
+                                return { [key] : object[key] }
+                            })
+                        });
+                    } else {
+                        return Promise.resolve(0);
+                    }
+                } else {
+                    return Promise.resolve(0);
+                }
+            }).catch(error => {
+                throw error
+            });
+        } else {
+            return Promise.resolve(0);
+        }
+    }
+
+    relaodUniques() {
+        let params : DynamoDB.DocumentClient.GetItemInput = {
+            TableName : this.database,
+            Key: {
+                _pk_className : '_UNIQUE_INDEX_',
+                _sk_id : this.className
+            },
+            ConsistentRead : true
+        }
+
+        return this.dynamo.get(params).promise().then(
+            item => {
+                let uniques = [];
+                if (item && item['fields']) {
+                    Cache.put('UNIQUE', { [this.className] : item['fields'] });
+                    uniques = item['fields'];
+                } else {
+                    Cache.put('UNIQUE', { [this.className] : [] });
+                }
+
+                return Promise.resolve(uniques);
+            }
+        );
+    }
+
     insertOne(object) : Promise {
         let id = object['_id'] || newObjectId();
+        object['_id'] = id;
 
         let params : DynamoDB.DocumentClient.PutItemInput = {
             TableName : this.database,
@@ -202,12 +262,7 @@ export class Partition {
                     if (err) {
                         reject(err);
                     } else {
-                        resolve({
-                            ok : 1,
-                            n : 1,
-                            ops : [ object ],
-                            insertedId : id
-                        });
+                        resolve({ ok : 1, n : 1, ops : [ object ], insertedId : id });
                     }
                 });
             }

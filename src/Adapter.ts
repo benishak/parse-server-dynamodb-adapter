@@ -6,6 +6,7 @@ import { _Cache as Cache } from './Cache';
 import { SchemaPartition, mongoSchemaToParseSchema, parseFieldTypeToMongoFieldType } from './SchemaPartition';
 import { Parse } from 'parse/node';
 import { _ } from 'lodash';
+import { newObjectId } from 'parse-server/lib/cryptoUtils';
 
 type Options = {
     skip? : Object, // not supported
@@ -175,33 +176,20 @@ export class Adapter {
             }, 
             TableName: this.database
         };
-        return new Promise((resolve, reject) => {
-            this.service.describeTable({ TableName : this.database }, (err, data) => {
-                Cache.flush();
-                let promise;
 
-                if (err) {
-                    promise = Promise.resolve();
-                } else {
-                    promise = this.service.deleteTable({ TableName : this.database }).promise();
-                }
-
-                promise.then(() => {
-                    return Promise.delay(100);
-                }).catch(() => {
-                    return Promise.resolve();
-                }).then(() => {
-                    this.service.createTable(params, (err, data) => {
-                        if (err) {
-                            reject();
-                        } else {
-                            Promise.delay(100).then(() => {
-                                resolve()
-                            });
-                        }
-                    });
-                });
-            });
+        Cache.flush();
+        let promise = this.service.describeTable({ TableName : this.database }).promise();
+        
+        return promise.then(() => {
+            return this.service.deleteTable({ TableName : this.database }).promise();
+        }).catch(() => {
+            return Promise.resolve();
+        }).then(() => {
+            return this.service.createTable(params).promise();
+        }).then(() => {
+            Promise.resolve();
+        }).catch((err) => {
+            Promise.reject(err);
         });
     }
 

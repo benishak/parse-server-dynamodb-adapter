@@ -1,4 +1,5 @@
 import * as Promise from 'bluebird';
+import { _ } from 'lodash';
 
 // durable cache no ttl!
 class Cache {
@@ -15,7 +16,8 @@ class Cache {
         }
 
         else if (this.cache[key].constructor === Array) {
-            this.cache[key] = this.cache[key].concat(value);
+            if ((value instanceof Array)) value = [value];
+            this.cache[key] = _.union(this.cache[key], value);
         }
 
         else if (this.cache[key].constructor === Object) {

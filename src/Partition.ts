@@ -161,6 +161,16 @@ export class Partition {
                                 delete item._pk_className;
                                 delete item._sk_id;
                             });
+
+                            if (results.length > 1 && Object.keys(options.sort).length > 1) {
+                                delete options.sort['_id'];
+                                delete options.sort['_sk_id'];
+                                results = _.orderBy(
+                                    results,
+                                    Object.keys(options.sort),
+                                    $.values(options.sort).map((k) => { if (k == 1) return 'asc'; else return 'desc' })
+                                );
+                            }
                             //console.log('QUERY RESULT', this.className, u.inspect(results, false, null))
                             resolve(results);
                         }
@@ -328,7 +338,6 @@ export class Partition {
                             if (err) {
                                 if (err.name == 'ConditionalCheckFailedException') {
                                     resolve({ ok : 1, n : 0, nModified : 0, value : null});
-                                    //reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
                                 } else {
                                     reject(err);
                                 }
@@ -380,7 +389,7 @@ export class Partition {
             return this.find(query, options).then(
                 (res) => {
                     res = res.filter(item => item._id != undefined);
-                    if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot delete nothing');
+                    if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot update nothing');
 
                     let promises = res.map(
                         item => this.updateOne({ _id : item._id }, object)
@@ -454,13 +463,12 @@ export class Partition {
                         this.dynamo.delete(params, (err, data) => {
                             if (err) {
                                 if (err.name == 'ConditionalCheckFailedException') {
-                                    //reject(new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found'));
-                                    resolve({ ok : 1, n : 0, deletedCount : 0 })
+                                    resolve({ ok : 1, n : 0, deletedCount : 0 });
                                 } else {
                                     reject(err);
                                 }
                             } else {
-                                resolve({ ok : 1, n : 1, deletedCount : 1 })
+                                resolve({ ok : 1, n : 1, deletedCount : 1 });
                             }
                         });
                     }
@@ -482,7 +490,7 @@ export class Partition {
             return this.find(query, options).then(
                 (res) => {
                     res = res.filter(item => item._id != undefined);
-                    if (res.length === 0) throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB : cannot delete nothing');
+                    if (res.length === 0) throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Object not found');
 
                     let promises = res.map(
                         item => this.deleteOne({ _id : item._id })
@@ -493,7 +501,7 @@ export class Partition {
                             Promise.all(promises).then(
                                 res => resolve({ ok : 1, n : res.length, deletedCount : res.length })
                             ).catch(
-                                err => { throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB : Internal Error'); }
+                                () => { throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB : Internal Error'); }
                             );
                         }
                     )

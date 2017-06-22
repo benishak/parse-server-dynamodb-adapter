@@ -77,6 +77,29 @@ Transform.mongoSchemaFromFieldsAndClassNameAndCLP = (fields, className, classLev
     return mongoObject;
 }
 
+Transform.transformToParseObject = (className, mongoObject, schema) => {
+    const object = Transform.mongoObjectToParseObject(className, mongoObject, schema);
+    if (object instanceof Object) {
+        Object.keys(schema.fields|| {}).forEach(k => {
+            if (schema.fields[k].type == 'Date' && typeof object[k] == 'string') {
+                object[k] = Parse._encode(new Date(object[k]));
+            }
+        });
+
+        if (className == '_User') {
+            if (object['_password_changed_at']) {
+                object['_password_changed_at'] = Parse._encode(new Date(object['_password_changed_at']));
+            }
+
+            if (object['_email_verify_token_expires_at']) {
+                object['_email_verify_token_expires_at'] = Parse._encode(new Date(object['_email_verify_token_expires_at']));
+            }
+        }
+    }
+
+    return object;
+}
+
 export class Adapter {
     
     service : DynamoDB;
@@ -176,18 +199,21 @@ export class Adapter {
             }, 
             TableName: this.database
         };
-
-        Cache.flush();
-        let promise = this.service.describeTable({ TableName : this.database }).promise();
         
-        return promise.then(() => {
-            return this.service.deleteTable({ TableName : this.database }).promise();
-        }).catch(() => {
+        return Cache.flush().then(() => {
+            return this.service.describeTable({ TableName : this.database }).promise();
+        }).then(() => {
+            return this.service.scan({ TableName : this.database, AttributesToGet: ['_pk_className', '_sk_id'] }).promise();
+        }).then((data) => {
+            if (data.Items.length > 0) {
+                return Promise.reduce(data.Items, (acc, item) => {
+                    return this.service.deleteItem({ TableName : this.database, Key : item }).promise();
+                });
+            } else {
+                return Promise.resolve();
+            }
+        }).then(() => {
             return Promise.resolve();
-        }).then(() => {
-            return this.service.createTable(params).promise();
-        }).then(() => {
-            Promise.resolve();
         }).catch((err) => {
             Promise.reject(err);
         });
@@ -316,7 +342,7 @@ export class Adapter {
                     throw new Parse.Error(Parse.Error.DUPLICATE_VALUE, 'A duplicate value for a field with unique values was provided');
                 }
             })
-            .then(result => Transform.mongoObjectToParseObject(className, result.value, schema))
+            .then(result => Transform.transformToParseObject(className, result.value, schema))
             .catch(
                 error => { throw error }
             )
@@ -340,7 +366,7 @@ export class Adapter {
         
         return this._adaptiveCollection(className).find(query, { skip, limit, sort, keys})
             .then(
-                objects => objects.map(object => Transform.mongoObjectToParseObject(className, object, schema))
+                objects => objects.map(object => Transform.transformToParseObject(className, object, schema))
             );
     }
 

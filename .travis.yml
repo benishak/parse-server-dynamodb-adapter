@@ -1,0 +1,37 @@
+language: node_js
+dist: trusty
+node_js:
+- '6.10'
+- '7.10'
+- '8.1.2'
+services:
+  - docker
+addons:
+  hosts:
+  - dynamodb-local
+  apt_packages:
+  - openjdk-8-jre
+  - python-pip
+branches:
+  only:
+  - master
+  - /^[0-9]+.[0-9]+.[0-9]+(-.*)?$/
+cache:
+  directories:
+  - node_modules
+  - /tmp
+  - resources
+  - ~/.aws
+
+# Test stage
+stage: test
+before_script:
+- node -e 'require("./build/src/index.js")'
+- sudo pip install --upgrade pip
+- sudo pip install awscli
+- aws configure set region earth
+- echo "[default]" > ~/.aws/credentials
+- echo "aws_access_key_id = key" >> ~/.aws/credentials
+- echo "aws_secret_access_key = secret" >> ~/.aws/credentials
+after_script:
+- bash <(curl -s https://codecov.io/bash)

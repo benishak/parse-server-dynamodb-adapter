@@ -57,10 +57,10 @@ var api = new ParseServer({
 ```
 ---
 
-## Limitation in AWS DynamoDB
+## Limits in AWS DynamoDB
 
-Just like other databases DynamoDB has also some limitation which is documented [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html):
-But the most important limitations that you need to know are 
+Just like other databases DynamoDB has also some limits that are documented [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html):
+But the most important limits that you need to know are 
 
 - Maximum Document/Object/Item Size : 400KB (vs 16MB in MongoDB)
 - Maximum number of elements in the `$in` query : 100 (vs as many as you want in MongoDB, as long the whole query document size doesn't exceed 16MB)

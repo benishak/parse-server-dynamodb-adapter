@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/benishak/parse-server-dynamodb-adapter.svg?branch=master)](https://travis-ci.org/benishak/parse-server-dynamodb-adapter) [![npm version](https://badge.fury.io/js/parse-server-dynamodb-adapter.svg)](https://badge.fury.io/js/parse-server-dynamodb-adapter)
 # AWS DynamoDB Parse Server Adapter
 
 this is database adapter to add support of AWS DynamoDB to Parse Server

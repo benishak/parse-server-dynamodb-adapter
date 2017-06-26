@@ -26,7 +26,6 @@ cache:
 # Test stage
 stage: test
 before_script:
-- node -e 'require("./build/src/index.js")'
 - sudo pip install --upgrade pip
 - sudo pip install awscli
 - aws configure set region earth

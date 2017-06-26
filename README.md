@@ -62,7 +62,7 @@ Just like other databases DynamoDB has also some limitation which is documented 
 But the most important limitations that you need to know are 
 
 - Maximum Document/Object/Item Size : 400KB (vs 16MB in MongoDB)
-- Maximum number of elements in the `$in` query : 100 (vs unlimted in MongoDB)
+- Maximum number of elements in the `$in` query : 100 (vs as many as you want in MongoDB, as long the whole query document size doesn't exceed 16MB)
 - Maximum [Expression](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.html) Length : 4 KB
 
 # Compatibility with Parse Server
@@ -76,3 +76,31 @@ Please remember AWS DynamoDB is mainly a key-value Database, this adapter tried 
 - **Uniqueness** : This adapter impelements uniqueness on the adapter layer, so uniquness is not 100% guaranteed when inserting data in parallel
 - **read consistency** : DynamoDB has an eventually read consistency by default, but this query for the nature of Parse Server is using **strong read consistency**, this may come with extra AWS charges, read more about this topic [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html)
 - **Array of Pointers** : you can use pointers but you cannot have an ***array of pointers***! we suggest storing only the `objectId` as string like this `Activity.set("users",[User1.id, User2.id, ... ]")` instead of `Activity.set("users", [User1, User2, ... ])` 
+
+### Usage with Parse Server
+
+You can use this adapter as a npm module with any project you have without Parse Server
+
+```
+var dynamo = new DynamoDB('my-table', // your DynamoDB Table
+              { apiVersion: '2012-08-10', // AWS API Version
+                region : 'eu-central-1',  // your AWS Region where you setup your DynamoDB Table
+                accessKeyId: 'AK....',    // your AWS Access Key ID, ignore if you are using IAM Roles
+                secretAccessKey: 'secret' // your AWS Secret Access Key, ignore if you are using IAM Ro$
+               }
+           );
+
+var db = dynamo.getAdapter()
+var User = db._adaptiveCollection('User');
+User.insertOne({ _id : "1234", "name" : "benishak" });
+User.find({ _id : "1234" });
+
+// or using Partiton instance
+var Partition = dynamo.Partition;
+var User = new Partition('my-table', 'User', dynamo.adapter.service);
+User.insertOne({ _id : "1234", "name" : "benishak" });
+User.find({ _id : "1234" });
+User.deleteOne({ _id : "1234" });
+```
+
+I will create a much easier API in next version of this adapter

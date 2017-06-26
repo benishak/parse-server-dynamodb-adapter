@@ -55,6 +55,7 @@ var api = new ParseServer({
   ...
 });
 ```
+---
 
 ## Limitation in AWS DynamoDB
 
@@ -77,7 +78,9 @@ Please remember AWS DynamoDB is mainly a key-value Database, this adapter tried 
 - **read consistency** : DynamoDB has an eventually read consistency by default, but this query for the nature of Parse Server is using **strong read consistency**, this may come with extra AWS charges, read more about this topic [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html)
 - **Array of Pointers** : you can use pointers but you cannot have an ***array of pointers***! we suggest storing only the `objectId` as string like this `Activity.set("users",[User1.id, User2.id, ... ]")` instead of `Activity.set("users", [User1, User2, ... ])` 
 
-### Usage with Parse Server
+---
+
+# Usage without Parse Server
 
 You can use this adapter as a npm module with any project you have without Parse Server
 

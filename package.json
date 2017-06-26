@@ -1,16 +1,15 @@
 {
   "name": "parse-server-dynamodb-adapter",
   "version": "1.0.0",
-  "description": "",
-  "main": "build/index.js",
+  "description": "AWS DynamoDB Adapter for Parse Server",
+  "main": "build/src/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node build/index.js",
-    "test": "tsc && mocha build/spec"
+    "test": "./resources/start-dynamodb.sh && tsc && mocha build/spec && ./resources/stop-dynamodb.sh"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "@types/aws-sdk": "^2.7.0",
     "@types/node": "^7.0.27",

@@ -1,0 +1,48 @@
+{
+  "name": "aws-dynamodb-truncate",
+  "version": "1.0.0",
+  "description": "Simple script to delete all records in a DynamoDB table",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "aws-sdk": "latest",
+    "async":"latest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ApplexusLabs/aws-dynamodb-truncate.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ApplexusLabs/aws-dynamodb-truncate/issues"
+  },
+  "homepage": "https://github.com/ApplexusLabs/aws-dynamodb-truncate#readme",
+  "jshintConfig": {
+    "bitwise": true,
+    "browser": true,
+    "camelcase": true,
+    "curly": true,
+    "eqeqeq": true,
+    "es5": true,
+    "esnext": true,
+    "immed": true,
+    "indent": 2,
+    "jasmine": true,
+    "latedef": false,
+    "newcap": true,
+    "noarg": true,
+    "node": true,
+    "quotmark": "single",
+    "regexp": true,
+    "smarttabs": true,
+    "strict": true,
+    "trailing": false,
+    "undef": true,
+    "unused": true,
+    "white": false,
+    "globals": {}
+  }
+}

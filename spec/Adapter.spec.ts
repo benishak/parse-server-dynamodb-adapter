@@ -189,7 +189,7 @@ const $ = DDB.getAdapter();
             expect(mob.objectId).to.be.equal(objectId);
             expect(mob.array instanceof Array).to.be.equal(true);
             expect(typeof mob.object).to.be.equal('object');
-            expect(mob.date).to.be.equal('2016-05-26T20:55:01.154Z');
+            expect(mob.date.iso).to.be.equal('2016-05-26T20:55:01.154Z');
             expect(mob.file.__type).to.be.equal('File');
             done();
         })
@@ -233,8 +233,8 @@ const $ = DDB.getAdapter();
             const mob = results;
             expect(mob.array instanceof Array).to.be.equal(true);
             expect(typeof mob.object).to.be.equal('object');
-            expect(typeof mob.date).to.be.equal('string');
-            expect(mob.date).to.be.equal('2016-05-26T20:55:01.154Z');
+            expect(typeof mob.date).to.be.equal('object');
+            expect(mob.date.iso).to.be.equal('2016-05-26T20:55:01.154Z');
             return adapter._rawFind(className);
         })
         .then(results => {

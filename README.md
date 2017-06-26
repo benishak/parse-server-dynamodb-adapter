@@ -14,7 +14,14 @@ YOU MUST USE THESE KEYS NAME IN ORDER TO USE THIS ADAPTER!
 ### Example creating the table using the CLI
 
 ```
-aws dynamodb create-table --table-name parse-server --attribute-definitions AttributeName=_pk_className,AttributeType=S AttributeName=_sk_id,AttributeType=S --key-schema AttributeName=_pk_className,KeyType=HASH AttributeName=_sk_id,KeyType=RANGE --provisioned-throughput ReadCapacityUnits=500,WriteCapacityUnits=1000
+pip install awscli                    // install awscli using python pip
+aws configure set region eu-central-1 // set your aws region
+aws configure                         // set your AWS Access Key ID and Secret
+aws dynamodb create-table 
+    --table-name parse-server 
+    --attribute-definitions AttributeName=_pk_className,AttributeType=S AttributeName=_sk_id,AttributeType=S
+    --key-schema AttributeName=_pk_className,KeyType=HASH AttributeName=_sk_id,KeyType=RANGE 
+    --provisioned-throughput ReadCapacityUnits=500,WriteCapacityUnits=1000
 ```
 
 Please read more about Read/Write Capacity Units [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ProvisionedThroughput.html)
@@ -23,15 +30,20 @@ Make sure you provision enough Capacity Units, it depends on your application, i
 
 The Read/Write Capacity Units can be changed anytime, but you cannot change the Primary Key and Sort Key once the table is created!
 
+### Create AWS IAM User
+Learn [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DAX.client.create-user-policy.html) about how to setup an AWS IAM User and generate aws credentials
+
+If you are using AWS EC2, I suggest using [AWS IAM Roles](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/authentication-and-access-control.html) and attach it to your EC2 Instance instead of IAM Users for better security
+
 ## Usage
 
 ```
 var DynamoDB = require('parse-server-dynamodb-adapter').DynamoDB;
 var dynamo = new DynamoDB('parse-server', // your DynamoDB Table 
-              { apiVersion: '2012-08-10',
+              { apiVersion: '2012-08-10', // AWS API Version
                 region : 'eu-central-1',  // your AWS Region where you setup your DynamoDB Table
-                accessKeyId: 'AK....',    // your AWS Access Key ID 
-                secretAccessKey: 'secret' // your AWS Secret Access Key
+                accessKeyId: 'AK....',    // your AWS Access Key ID, ignore if you are using IAM Roles 
+                secretAccessKey: 'secret' // your AWS Secret Access Key, ignore if you are using IAM Roles
                }
            );
 

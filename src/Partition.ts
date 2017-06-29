@@ -337,7 +337,11 @@ export class Partition {
                         this.dynamo.update(params, (err, data) => {
                             if (err) {
                                 if (err.name == 'ConditionalCheckFailedException') {
-                                    resolve({ ok : 1, n : 0, nModified : 0, value : null});
+                                    if (upsert) {
+                                        reject(err);
+                                    } else {
+                                        resolve({ ok : 1, n : 0, nModified : 0, value : null});
+                                    }
                                 } else {
                                     reject(err);
                                 }
@@ -399,9 +403,7 @@ export class Partition {
                         (resolve, reject) => {
                             Promise.all(promises).then(
                                 res => {
-                                    res = res.filter(item => {
-                                        if (res.value) return res.value;
-                                    });
+                                    res = res.filter(item => item.value != undefined);
                                     if (res.length > 0) {
                                         resolve(res);
                                     } else {

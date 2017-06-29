@@ -5,7 +5,7 @@ this is database adapter to add support of AWS DynamoDB to Parse Server
 
 ## Setup
 
-Create a Table using the AWS Console or the AWS API or the AWS CLI with the following parameters
+Create **one** Table using the AWS Console or the AWS API or the AWS CLI with the following parameters
 
 - **Primary Key** : _pk_className
 - **Sort Key** : _sk_id
@@ -76,6 +76,8 @@ Please remember AWS DynamoDB is mainly a key-value Database, this adapter tried 
 - **containedIn** : this cannot support huge array more than `98` elements when using Parse.Query
 - **containsAll** : you can use this with bigger array however remember that you may hit the maximum length of Expression, which is limited by 4KB
 - **Uniqueness** : This adapter impelements uniqueness on the adapter layer, so uniquness is not 100% guaranteed when inserting data in parallel
+- **startsWith/contains** : Works with strings but not with RegEx
+- **endsWith** : doesn't work, du DynamoDB doesn't support RegEx
 - **read consistency** : DynamoDB has an eventually read consistency by default, but this query for the nature of Parse Server is using **strong read consistency**, this may come with extra AWS charges, read more about this topic [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html)
 - **Array of Pointers** : you can use pointers but you cannot have an ***array of pointers***! we suggest storing only the `objectId` as string like this `Activity.set("users",[User1.id, User2.id, ... ]")` instead of `Activity.set("users", [User1, User2, ... ])` 
 

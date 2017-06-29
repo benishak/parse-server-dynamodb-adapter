@@ -7,8 +7,8 @@ this is database adapter to add support of AWS DynamoDB to Parse Server
 
 Create **one** Table using the AWS Console or the AWS API or the AWS CLI with the following parameters
 
-- **Primary Key** : _pk_className
-- **Sort Key** : _sk_id
+- **Primary Key**   :    `_pk_className`
+- **Sort Key**      :    `_sk_id`
 
 YOU MUST USE THESE KEYS NAME IN ORDER TO USE THIS ADAPTER!
 

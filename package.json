@@ -1,13 +1,14 @@
 {
   "name": "parse-server-dynamodb-adapter",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "AWS DynamoDB Adapter for Parse Server",
   "main": "build/src/index.js",
   "scripts": {
     "build": "tsc",
     "test": "./resources/start-dynamodb.sh && tsc && mocha build/spec && ./resources/stop-dynamodb.sh"
   },
-  "keywords": [],
+  "keywords": ["parse-server", "Parse.com", "Parse Server", "DynamoDB", "AWS", "AWS DynamoDB", "Database", "Adapter", "API", "SDK"],
+  "homepage": "https://github.com/benishak/parse-server-dynamodb-adapter",
   "author": "",
   "license": "Apache-2.0",
   "dependencies": {

@@ -124,7 +124,7 @@ export class Expression {
         return projection.sort().join(', ');
     }
 
-    static getUpdateExpression(object : Object, _params) : string {
+    static getUpdateExpression(object : Object, _params, original : Object = {}) : string {
 
         if (!_params.ExpressionAttributeNames) {
             _params.ExpressionAttributeNames = {};
@@ -133,6 +133,8 @@ export class Expression {
         if (!_params.ExpressionAttributeValues) {
             _params.ExpressionAttributeValues = {};
         }
+
+        original = original || {};
 
         let $set = {}, $unset = [], $inc = {}, $append = {}, $del = {};
         let _set = [], _unset = [], _del = [];
@@ -166,9 +168,6 @@ export class Expression {
                         }
                         $append = object[_op];
                         _params.ExpressionAttributeValues[':__void__'] = [];
-                        delete $append['_id'];
-                        delete $append['_sk_id'];
-                        delete $append['_pk_className'];
                         break;
                     case '$pullAll':
                         $del = object[_op] || {};
@@ -176,36 +175,24 @@ export class Expression {
                     case '$setOnInsert':
                     case '$set':
                         $set = object[_op] || {};
-                        delete $set['_id'];
-                        delete $set['_sk_id'];
-                        delete $set['_pk_className'];
                         break;
                     case '$unset':
                         $unset = object['$unset'] || {};
-                        delete $unset['_id'];
-                        delete $unset['_sk_id'];
-                        delete $unset['_pk_className'];
                         break;
                     case '$inc':
                         $inc = object['$inc'] || {};
                         _params.ExpressionAttributeValues[':__zero__'] = 0;
-                        delete $inc['_id'];
-                        delete $inc['_sk_id'];
-                        delete $inc['_pk_className'];
+                        break;
+                    case '$currentDate':
+                        for (let key in (object[_op] || {})) {
+                            object[key] = (new Date()).toISOString();
+                        }
+                        $set = Object.assign($set, object[_op]);
                         break;
                     case '$mul':
                     case '$min':
                     case '$max':
                     case '$rename':
-                    case '$currentDate':
-                        for (let key in (object[_op] || {})) {
-                            object[key] = (new Date()).toISOString();
-                        }
-                        $set = Object.assign($set || {}, object[_op]);
-                        delete $set['_id'];
-                        delete $set['_sk_id'];
-                        delete $set['_pk_className'];
-                        break;
                     case '$bit':
                     case '$isolated':
                         throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [' + _op + '] not supported on update');
@@ -216,37 +203,86 @@ export class Expression {
             }
         );
 
+
+        delete $set['_id'];
+        delete $set['_sk_id'];
+        delete $set['_pk_className'];
+
+        delete $inc['_id'];
+        delete $inc['_sk_id'];
+        delete $inc['_pk_className'];
+
+        delete $del['_id'];
+        delete $del['_sk_id'];
+        delete $del['_pk_className'];
+
+        delete $unset['_id'];
+        delete $unset['_sk_id'];
+        delete $unset['_pk_className'];
+
+        delete $append['_id'];
+        delete $append['_sk_id'];
+        delete $append['_pk_className'];
+
         let attributes = Object.keys(_params.ExpressionAttributeNames || {});
 
-        Object.keys($set).forEach(key => {
-            if ($set[key] !== undefined) {
-                let keys = Expression.transformPath(_params, key, $set[key]);
+        Object.keys($set).forEach(path => {
+            if ($set[path] !== undefined) {
+                let keys = path.split('.');
+                let a = keys[0];
+                let value = $set[path];
+                if (keys.length > 1) {
+                    console.log('++++++++++++++++++++++', original);
+                    _.set(original, path, value);
+                    value = original[a];
+                    path = a;
+                    console.log('++++++++++++++++++++++', original);
+                    console.log('++++++++++++++++++++++', original[a]);
+                }
+                path = Expression.transformPath(_params, path, value);
                 let exp = '[key] = [value]';
-                exp = exp.replace('[key]', keys);
+                exp = exp.replace('[key]', path);
                 exp = exp.replace('[value]', _params._v);
                 _set.push(exp);
             } else {
-                if ($unset.indexOf(key) == -1) {
-                    _unset.push(key);
+                if ($unset.indexOf(path) == -1) {
+                    _unset.push(path);
                 }
             }
         });
 
-        Object.keys($inc).forEach(key => {
-            if ($inc[key] != undefined) {
-                let keys = Expression.transformPath(_params, key, $inc[key]);
-                let exp = '[key] = if_not_exists([key],:__zero__) + [value]';
-                exp = exp.replace(/\[key\]/g, keys);
-                exp = exp.replace('[value]', _params._v);
-                _set.push(exp);
+        Object.keys($inc).forEach(path => {
+            if (typeof $inc[path] == 'number') {
+                let exp;
+                let keys = path.split('.');
+                let a = keys[0];
+                let value = $inc[path];
+                if (keys.length > 1) {
+                    value = _.get(original, path, 0);
+                    if (typeof value == 'number') {
+                        value = $inc[path] + value;
+                        _.set(original, path, value);
+                        path = Expression.transformPath(_params, a, original[a]);
+                        exp = '[key] = [value]';
+                        exp = exp.replace(/\[key\]/g, path);
+                        exp = exp.replace('[value]', _params._v);
+                        _set.push(exp);
+                    }
+                } else {
+                    path = Expression.transformPath(_params, path, value);
+                    exp = '[key] = if_not_exists([key],:__zero__) + [value]';
+                    exp = exp.replace(/\[key\]/g, path);
+                    exp = exp.replace('[value]', _params._v);
+                    _set.push(exp);
+                }
             }
         });
 
         Object.keys($append).forEach(key => {
             if ($append[key] != undefined) {
-                let keys = Expression.transformPath(_params, key, $append[key]);
+                let path = Expression.transformPath(_params, key, $append[key]);
                 let exp = '[key] = list_append(if_not_exists([key],:__void__),[value])';
-                exp = exp.replace(/\[key\]/g, keys);
+                exp = exp.replace(/\[key\]/g, path);
                 exp = exp.replace('[value]', _params._v);
                 _set.push(exp);
             }
@@ -254,9 +290,9 @@ export class Expression {
 
         Object.keys($del).forEach(key => {
             if ($del[key] != undefined) {
-                let keys = Expression.transformPath(_params, key, dynamo.createSet($del[key]));
+                let path = Expression.transformPath(_params, key, dynamo.createSet($del[key]));
                 let exp = '[key] [value]';
-                exp = exp.replace(/\[key\]/g, keys);
+                exp = exp.replace(/\[key\]/g, path);
                 exp = exp.replace('[value]', _params._v);
                 _del.push(exp);
             }
@@ -494,9 +530,9 @@ export class Expression {
                         if (q == '$in' && not === false) _not_ = false;
                         query[q] = query[q] || [];
                         size = query[q].length;
-                        if (size === 0) query[q] = ['*']; //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : [$in] cannot be empty');
+                        if (size === 0) query[q] = ['*'];
                         if (size === 1) query[q] = query[q][0];
-                        if (size > 100) query[q] = query[q].slice(0,99); //throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : The [$in] operator is provided with too many operands, ' + size);
+                        if (size > 100) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : The [$in] operator is provided with too many operands, ' + size);
                         _cmp_ = size === 1 ? '=' : 'IN';
                         exp = this.createExpression(key, query[q], _cmp_, _not_);
                         this.Expression = this.Expression.replace('[first]', exp);

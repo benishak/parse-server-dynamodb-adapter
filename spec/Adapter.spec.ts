@@ -230,6 +230,7 @@ const $ = DDB.getAdapter();
             return adapter.findOneAndUpdate(className, schema, query, update)
         })
         .then(results => {
+            console.log(results);
             const mob = results;
             expect(mob.array instanceof Array).to.be.equal(true);
             expect(typeof mob.object).to.be.equal('object');

@@ -296,21 +296,24 @@ export class Partition {
         let find = Promise.resolve();
 
         if (id) {
-            query['_sk_id'] = id;
-            find = this._get(id, ['_sk_id', '_id']).then(
-                result => {
-                    if (result.length > 0 && result[0]._id === id) {
-                        return result[0]._id;
+            if (typeof id == 'string') {
+                find = this._get(id).then(
+                    result => {
+                        if (result.length > 0 && result[0]._id === id) {
+                            return result[0];
+                        }
+                        return null;
                     }
-                    return null;
-                }
-            );
+                );
+            } else {
+                return this.updateMany(query, object, upsert);
+            }
         } else {
             if (Object.keys(query).length > 0) {
                 find = this.find(query, { limit : 1 }).then(
                     results => {
                         if (results.length > 0 && results[0]._id) {
-                            return results[0]._id;
+                            return results[0];
                         }
                         return null;
                     }
@@ -326,14 +329,13 @@ export class Partition {
         params.ExpressionAttributeNames = exp.ExpressionAttributeNames;
         params.ExpressionAttributeValues = exp.ExpressionAttributeValues;
 
-        params.UpdateExpression = Expression.getUpdateExpression(object, params);
-
         return new Promise(
             (resolve, reject) => {
-                find.then((id) => {
-                    if (id) {
-                        params.Key._sk_id = id;
-                        //console.log('UPDATE PARAMS', params);
+                find.then((result) => {
+                    if (result && result._id) {
+                        params.UpdateExpression = Expression.getUpdateExpression(object, params, result);
+                        params.Key._sk_id = result._id;
+                        console.log('UPDATE PARAMS', params);
                         this.dynamo.update(params, (err, data) => {
                             if (err) {
                                 if (err.name == 'ConditionalCheckFailedException') {
@@ -380,10 +382,10 @@ export class Partition {
         return this.updateOne(query, object, true);
     }
 
-    updateMany(query = {}, object) : Promise {
+    updateMany(query = {}, object, upsert = false) : Promise {
         let id = query['_id'];
 
-        if (id) {
+        if (typeof id == 'string') {
             return this.updateOne(query, object);
         } else {
             let options = {
@@ -396,7 +398,7 @@ export class Partition {
                     if (res.length === 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB : cannot update nothing');
 
                     let promises = res.map(
-                        item => this.updateOne({ _id : item._id }, object)
+                        item => this.updateOne({ _id : item._id }, object, upsert)
                     );
 
                     return new Promise(

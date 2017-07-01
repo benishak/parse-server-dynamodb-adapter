@@ -335,7 +335,7 @@ export class Partition {
                     if (result && result._id) {
                         params.UpdateExpression = Expression.getUpdateExpression(object, params, result);
                         params.Key._sk_id = result._id;
-                        console.log('UPDATE PARAMS', params);
+                        //console.log('UPDATE PARAMS', params);
                         this.dynamo.update(params, (err, data) => {
                             if (err) {
                                 if (err.name == 'ConditionalCheckFailedException') {

@@ -232,12 +232,9 @@ export class Expression {
                 let a = keys[0];
                 let value = $set[path];
                 if (keys.length > 1) {
-                    console.log('++++++++++++++++++++++', original);
                     _.set(original, path, value);
                     value = original[a];
                     path = a;
-                    console.log('++++++++++++++++++++++', original);
-                    console.log('++++++++++++++++++++++', original[a]);
                 }
                 path = Expression.transformPath(_params, path, value);
                 let exp = '[key] = [value]';

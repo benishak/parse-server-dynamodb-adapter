@@ -162,9 +162,7 @@ export class Partition {
                                 delete item._sk_id;
                             });
 
-                            if (results.length > 1 && Object.keys(options.sort).length > 1) {
-                                delete options.sort['_id'];
-                                delete options.sort['_sk_id'];
+                            if (results.length > 1 && Object.keys(options.sort).length > 0) {
                                 results = _.orderBy(
                                     results,
                                     Object.keys(options.sort),

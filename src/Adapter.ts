@@ -81,7 +81,7 @@ Transform.transformToParseObject = (className, mongoObject, schema) => {
     const object = Transform.mongoObjectToParseObject(className, mongoObject, schema);
     if (object instanceof Object) {
         Object.keys(schema.fields|| {}).forEach(k => {
-            if (schema.fields[k].type == 'Date' && typeof object[k] == 'string') {
+            if ((schema.fields[k].type || '').toLowerCase() == 'date' && typeof object[k] == 'string' && ['createdAt', 'updatedAt'].indexOf(k) == -1) {
                 object[k] = Parse._encode(new Date(object[k]));
             }
         });

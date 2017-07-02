@@ -189,6 +189,7 @@ export class Expression {
                         }
                         $set = Object.assign($set, object[_op]);
                         break;
+                    case '$pull':
                     case '$mul':
                     case '$min':
                     case '$max':
@@ -275,23 +276,48 @@ export class Expression {
             }
         });
 
-        Object.keys($append).forEach(key => {
-            if ($append[key] != undefined) {
-                let path = Expression.transformPath(_params, key, $append[key]);
-                let exp = '[key] = list_append(if_not_exists([key],:__void__),[value])';
-                exp = exp.replace(/\[key\]/g, path);
-                exp = exp.replace('[value]', _params._v);
-                _set.push(exp);
+        Object.keys($append).forEach(path => {
+            if ($append[path] != undefined) {
+                let exp;
+                let keys = path.split('.');
+                let a = keys[0];
+                if (keys.length > 0) {
+                    let list = _.get(original, path, []);
+                    list.push($append[path]);
+                    _.set(original, path, list);
+                    path = Expression.transformPath(_params, a, $append[a]);
+                    exp = '[key] = [value]';
+                    exp = exp.replace(/\[key\]/g, path);
+                    exp = exp.replace('[value]', _params._v);
+                    _set.push(exp);
+                } else {
+                    exp = '[key] = list_append(if_not_exists([key],:__void__),[value])';
+                    exp = exp.replace(/\[key\]/g, path);
+                    exp = exp.replace('[value]', _params._v);
+                    _set.push(exp);
+                }
             }
         });
 
-        Object.keys($del).forEach(key => {
-            if ($del[key] != undefined) {
-                let path = Expression.transformPath(_params, key, dynamo.createSet($del[key]));
-                let exp = '[key] [value]';
-                exp = exp.replace(/\[key\]/g, path);
-                exp = exp.replace('[value]', _params._v);
-                _del.push(exp);
+        Object.keys($del).forEach(path => {
+            if ($del[path] instanceof Array) {
+                let value = _.get(original, path, []);
+                if (value instanceof Array) {
+                    $del[path].forEach(item => {
+                        if (item.constructor == Object) {
+                            _.pull(value, _.find(value, item));
+                        } else {
+                            _.pull(value, item);
+                        }
+                    });
+                    _.set(original, path, value);
+                    path = path.split('.')[0];
+                    path = Expression.transformPath(_params, path, original[path]);
+                    let exp = '[key] = [value]';
+                    exp = exp.replace('[key]', path);
+                    exp = exp.replace('[value]', _params._v);
+                    _set.push(exp);
+                }
             }
         });
 
@@ -314,17 +340,8 @@ export class Expression {
                 exp = 'REMOVE ' + _unset.join(', ');
             }
         }
-
-        if (_del.length > 0) {
-            if (exp) {
-                exp = exp + ' DELETE ' + _del.join(', ');
-            } else {
-                exp = 'DELETE ' + _del.join(', ');
-            }
-        }
         
         delete _params._v;
-        //console.log('UPDATE EXPRESSION', exp);
         return exp;
     }
 

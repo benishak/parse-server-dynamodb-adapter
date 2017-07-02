@@ -150,7 +150,7 @@ export class Adapter {
                         }
                     )
                     .catch(
-                        error => { throw new error; }
+                        error => { throw error; }
                     )
                 } else {
                     throw new Parse.Error(Parse.Error.DUPLICATE_VALUE, 'Class already exists.');

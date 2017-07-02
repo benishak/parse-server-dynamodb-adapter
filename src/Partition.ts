@@ -261,14 +261,22 @@ export class Partition {
                 _pk_className : this.className,
                 _sk_id : id,
                 ...object
-            }
+            },
+            ExpressionAttributeNames : {
+                '#id' : '_sk_id',
+            },
+            ConditionExpression : 'attribute_not_exists(#id)',
         }
 
         return new Promise(
             (resolve, reject) => {
                 this.dynamo.put(params, (err, data) => {
                     if (err) {
-                        reject(err);
+                        if (err.name == 'ConditionalCheckFailedException') {
+                            reject(new Parse.Error(Parse.Error.DUPLICATE_VALUE, 'Class already exists.'));
+                        } else {
+                            reject(err);
+                        }
                     } else {
                         resolve({ ok : 1, n : 1, ops : [ object ], insertedId : id });
                     }
@@ -503,7 +511,7 @@ export class Partition {
                             Promise.all(promises).then(
                                 res => resolve({ ok : 1, n : res.length, deletedCount : res.length })
                             ).catch(
-                                () => { throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB : Internal Error'); }
+                                () => reject(new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'DynamoDB : Internal Error'))
                             );
                         }
                     )

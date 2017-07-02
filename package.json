@@ -1,6 +1,6 @@
 {
   "name": "parse-server-dynamodb-adapter",
-  "version": "1.0.6",
+  "version": "1.0.6a",
   "description": "AWS DynamoDB Adapter for Parse Server",
   "main": "build/src/index.js",
   "scripts": {

@@ -167,7 +167,6 @@ export class Expression {
                             object[_op][key] = o;
                         }
                         $append = object[_op];
-                        _params.ExpressionAttributeValues[':__void__'] = [];
                         break;
                     case '$pullAll':
                         $del = object[_op] || {};
@@ -181,7 +180,6 @@ export class Expression {
                         break;
                     case '$inc':
                         $inc = object['$inc'] || {};
-                        _params.ExpressionAttributeValues[':__zero__'] = 0;
                         break;
                     case '$currentDate':
                         for (let key in (object[_op] || {})) {
@@ -264,11 +262,11 @@ export class Expression {
                         exp = '[key] = [value]';
                         exp = exp.replace(/\[key\]/g, path);
                         exp = exp.replace('[value]', _params._v);
-                        delete _params.ExpressionAttributeValues[':__zero__'];
                         _set.push(exp);
                     }
                 } else {
                     path = Expression.transformPath(_params, path, value);
+                    _params.ExpressionAttributeValues[':__zero__'] = 0;
                     exp = '[key] = if_not_exists([key],:__zero__) + [value]';
                     exp = exp.replace(/\[key\]/g, path);
                     exp = exp.replace('[value]', _params._v);
@@ -286,13 +284,14 @@ export class Expression {
                     let list = _.get(original, path, []);
                     list.push($append[path]);
                     _.set(original, path, list);
-                    path = Expression.transformPath(_params, a, $append[a]);
+                    path = Expression.transformPath(_params, a, original[a]);
                     exp = '[key] = [value]';
                     exp = exp.replace(/\[key\]/g, path);
                     exp = exp.replace('[value]', _params._v);
-                    delete _params.ExpressionAttributeValues[':__void__'];
                     _set.push(exp);
                 } else {
+                    path = Expression.transformPath(_params, path, $append[path]);
+                    _params.ExpressionAttributeValues[':__void__'] = [];
                     exp = '[key] = list_append(if_not_exists([key],:__void__),[value])';
                     exp = exp.replace(/\[key\]/g, path);
                     exp = exp.replace('[value]', _params._v);

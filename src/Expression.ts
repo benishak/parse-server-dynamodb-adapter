@@ -264,6 +264,7 @@ export class Expression {
                         exp = '[key] = [value]';
                         exp = exp.replace(/\[key\]/g, path);
                         exp = exp.replace('[value]', _params._v);
+                        delete _params.ExpressionAttributeValues[':__zero__'];
                         _set.push(exp);
                     }
                 } else {
@@ -289,6 +290,7 @@ export class Expression {
                     exp = '[key] = [value]';
                     exp = exp.replace(/\[key\]/g, path);
                     exp = exp.replace('[value]', _params._v);
+                    delete _params.ExpressionAttributeValues[':__void__'];
                     _set.push(exp);
                 } else {
                     exp = '[key] = list_append(if_not_exists([key],:__void__),[value])';

@@ -145,27 +145,44 @@ export class Expression {
                 switch (_op) {
                     case '$push':
                     case '$addToSet':
-                        for (let key in (object[_op] || {})) {
-                            let o = object[_op][key] || {};
-                            if (_.intersection(Object.keys(o), ['$slice', '$position']).length > 0) throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB cannot do this operation');
-                            if (o['$each']) {
-                                let list = o['$each'] || [];
-                                const sort = o['$sort'] || {};
-                                if (Object.keys(sort).length > 0 && list.constructor === Object) {
-                                    list = _.orderBy(
-                                        list,
-                                        Object.keys(sort),
-                                        $.values(sort).map((k) => { if (k == 1) return 'asc'; else return 'desc' })
-                                    );
-                                }
-                                o = _op == '$addToSet' ? _.uniq(list) : list;
+                        Object.keys(object[_op] || {}).forEach(key => {
+                            let list = [];
+                            if (original[key] instanceof Array) {
+                                list = list.concat(original[key]);
+                            }
+                            if (object[_op][key] instanceof Array) {
+                                list = list.concat(object[_op][key]);
                             } else {
-                                if (!(o instanceof Array)) {
-                                    o = [].push(object[_op]);
+                                let o = object[_op][key];
+                                if (o && o.constructor === Object) {
+                                    if (_.intersection(Object.keys(o), ['$slice', '$position']).length > 0) {
+                                        throw new Parse.Error(Parse.Error.INVALID_QUERY, 'DynamoDB cannot do this operation');
+                                    } else {
+                                        if (o.hasOwnProperty('$each') && o['$each'] instanceof Array) {
+                                            list = list.concat(o['$each']);
+                                            if (o['$sort']) {
+                                                let sortable = list.reduce((prev, item) => {
+                                                    if (item && item.constructor === Object) {
+                                                        return prev && true;
+                                                    } else {
+                                                        return prev && false;
+                                                    }
+                                                }, true);
+
+                                                if (sortable) {
+                                                    list = _.orderBy(
+                                                        list,
+                                                        Object.keys(o['$sort']),
+                                                        $.values(o['$sort']).map((k) => { if (k == 1) return 'asc'; else return 'desc' })
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            object[_op][key] = o;
-                        }
+                            object[_op][key] = _op == '$addToSet' ? _.uniq(list) : list;
+                        });
                         $append = object[_op];
                         break;
                     case '$pullAll':

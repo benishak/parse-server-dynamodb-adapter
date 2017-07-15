@@ -77,7 +77,7 @@ Please remember AWS DynamoDB is mainly a key-value Database, this adapter tried 
 - **containsAll** : you can use this with bigger array however remember that you may hit the maximum length of Expression, which is limited by 4KB
 - **Uniqueness** : This adapter impelements uniqueness on the adapter layer, so uniquness is not 100% guaranteed when inserting data in parallel
 - **startsWith/contains** : Works with strings but not with RegEx
-- **endsWith** : doesn't work, du DynamoDB doesn't support RegEx
+- **endsWith** : doesn't work, because DynamoDB doesn't support RegEx
 - **read consistency** : DynamoDB has an eventually read consistency by default, but this query for the nature of Parse Server is using **strong read consistency**, this may come with extra AWS charges, read more about this topic [here](http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html)
 - **Array of Pointers** : you can use pointers but you cannot have an ***array of pointers***! we suggest storing only the `objectId` as string like this `Activity.set("users",[User1.id, User2.id, ... ]")` instead of `Activity.set("users", [User1, User2, ... ])` 
 

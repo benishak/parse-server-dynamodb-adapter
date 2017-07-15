@@ -1,9 +1,8 @@
 language: node_js
 dist: trusty
 node_js:
-- '6.10'
-- '7.10'
-- '8.1.2'
+- '6.11.1'
+- '8.1.4'
 services:
   - docker
 addons:
